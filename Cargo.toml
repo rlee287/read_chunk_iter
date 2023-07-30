@@ -2,6 +2,13 @@
 name = "read_chunk_iter"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "An iterator adapter over a reader that yields fixed-size chunks at a time."
+repository = ""
+readme = ""
+
+keywords = ["iterator"]
+categories = ["filesystem"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
