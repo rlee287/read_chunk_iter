@@ -1,6 +1,8 @@
 use std::io::{Read, Seek, SeekFrom, ErrorKind};
 use std::io::Result as IOResult;
 
+/// An iterator adapter for readers that yields chunks of bytes in a `Box<[u8]>`.
+/// 
 #[derive(Debug, Clone, Hash)]
 pub struct ChunkedReaderIter<R> {
     reader: R,
@@ -10,13 +12,16 @@ pub struct ChunkedReaderIter<R> {
 }
 impl<R> ChunkedReaderIter<R>
 {
-    // For Read+Seek, prefer new_with_stream_pos
+    /// Instantiates a new [`ChunkedReaderIter`] that tries to read up to `buf_size` bytes at a time and that yields `chunk_size` bytes as an iterator until reaching EOF.
+    /// For readers that implement `Seek`, [`ChunkedReaderIter::new_with_rewind`] rewinds the given reader.
     pub fn new(reader: R, chunk_size: usize, buf_size: usize) -> Self {
         assert!(chunk_size > 0);
         assert!(buf_size > 0);
         assert!(buf_size >= chunk_size);
         Self { reader, chunk_size, buf_size, buf: Vec::with_capacity(buf_size) }
     }
+
+    /// Returns the wrapped reader. Warning: buffered read data will be lost, which can occur if `buf_size > chunk_size`.
     pub fn into_inner(self) -> R {
         self.reader
     }
@@ -34,6 +39,8 @@ impl<R> ChunkedReaderIter<R>
     }
 }
 impl<R: Seek> ChunkedReaderIter<R> {
+    /// Constructs a new [`ChunkedReaderIter`] that rewinds the reader to ensure that all data is yielded by the iterator.
+    /// See [`ChunkedReaderIter::new`] for descriptions of the other parameters.
     pub fn new_with_rewind(mut reader: R, chunk_size: usize, buf_size: usize) -> Self {
         reader.seek(SeekFrom::Start(0)).unwrap();
         Self::new(reader, chunk_size, buf_size)
@@ -43,6 +50,8 @@ impl<R: Seek> ChunkedReaderIter<R> {
 impl<R: Read> Iterator for ChunkedReaderIter<R> {
     type Item = IOResult<Box<[u8]>>;
 
+    /// Yields `self.chunk_size` bytes at a time until reaching EOF, after which it yields the remaining bytes before returning `None`.
+    /// All bytes successfully read are eventually returned: if reads into the buffer result in an error, it is passed up, but the successfully read data will be returned the next time the buffer is successfully filled.
     fn next(&mut self) -> Option<Self::Item> {
         let mut read_offset = self.buf.len();
         self.buf.resize(self.buf_size, 0x00);
