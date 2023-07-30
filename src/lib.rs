@@ -1,3 +1,7 @@
+#![forbid(unsafe_code)]
+
+#![doc(html_root_url = "https://docs.rs/read_chunk_iter/0.1.0")]
+
 use std::io::{Read, Seek, SeekFrom, ErrorKind};
 use std::io::Result as IOResult;
 
