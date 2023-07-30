@@ -96,6 +96,7 @@ mod tests {
     use super::*;
 
     use std::io::Cursor;
+    use std::convert::TryInto;
 
     #[derive(Debug, Default)]
     struct FunnyRead {
