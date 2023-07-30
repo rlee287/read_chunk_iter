@@ -13,7 +13,10 @@ pub struct ChunkedReaderIter<R> {
 impl<R> ChunkedReaderIter<R>
 {
     /// Instantiates a new [`ChunkedReaderIter`] that tries to read up to `buf_size` bytes at a time and that yields `chunk_size` bytes as an iterator until reaching EOF.
-    /// For readers that implement `Seek`, [`ChunkedReaderIter::new_with_rewind`] rewinds the given reader.
+    /// For readers that implement `Seek`, [`Self::new_with_rewind`] rewinds the given reader.
+    /// 
+    /// # Panics
+    /// Panics if `buf_size` is smaller than `chunk_size` or if either are 0.
     pub fn new(reader: R, chunk_size: usize, buf_size: usize) -> Self {
         assert!(chunk_size > 0);
         assert!(buf_size > 0);
@@ -33,7 +36,7 @@ impl<R> ChunkedReaderIter<R>
     pub fn buf_size(&self) -> usize {
         self.buf_size
     }
-    /// Returns a slice of the internal buffer used to buffer reads.
+    /// Returns a slice of the internal buffer used to buffer reads. The slice only contains valid buffered data, so it will be smaller than the value returned by [`Self::buf_size`].
     pub fn buf(&self) -> &[u8] {
         self.buf.as_ref()
     }
@@ -51,10 +54,17 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
     type Item = IOResult<Box<[u8]>>;
 
     /// Yields `self.chunk_size` bytes at a time until reaching EOF, after which it yields the remaining bytes before returning `None`.
-    /// All bytes successfully read are eventually returned: if reads into the buffer result in an error, it is passed up, but the successfully read data will be returned the next time the buffer is successfully filled.
+    /// All bytes successfully read are eventually returned: if reads into the buffer result in an error, the error is passed up, but the successfully read data will be returned the next time the buffer is successfully filled.
+    /// 
+    /// Note: If reading from a readable object that is being concurrently modified (e.g. a file that is being appended to by another process),
+    /// EOF may be hit more than once, resulting in more chunks after a chunk smaller than `self.chunk_size` or more chunks after yielding `None`.
+    /// (This is also a concern with the base [`Read`] trait, which may return more data even after returning `Ok(0)`).
     fn next(&mut self) -> Option<Self::Item> {
         let mut read_offset = self.buf.len();
+        // Temporarily resize Vec to try to fill it
+        // Due to initialization with `with_capacity` we do not need to reallocate
         self.buf.resize(self.buf_size, 0x00);
+        // Try to fill entire buf, but we're good if we have a whole chunk
         while read_offset < self.chunk_size {
             match self.reader.read(&mut self.buf[read_offset..]) {
                 Ok(0) => { break; }
@@ -67,8 +77,11 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
             // We hit EOF and ran out of buffer contents
             return None;
         }
+        // Shrink Vec back to how much was actually read
         self.buf.resize(read_offset, 0x00);
+
         if self.chunk_size > self.buf.len() {
+            // Yield the remaining data at EOF
             let boxed_data = self.buf.clone().into_boxed_slice();
             self.buf.clear();
             Some(Ok(boxed_data))
