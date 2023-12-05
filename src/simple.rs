@@ -95,23 +95,8 @@ mod tests {
     use super::*;
 
     use std::io::Cursor;
-    use std::convert::TryInto;
 
-    #[derive(Debug, Default)]
-    struct FunnyRead {
-        counter: usize
-    }
-    impl Read for FunnyRead {
-        fn read(&mut self, buf: &mut [u8]) -> IOResult<usize> {
-            let mut actual_count = 0;
-            for byte in buf.into_iter().take(3) {
-                actual_count += 1;
-                *byte = (self.counter%256).try_into().unwrap();
-                self.counter += 1;
-            }
-            Ok(actual_count)
-        }
-    }
+    use crate::dev_helpers::FunnyRead;
 
     #[test]
     fn chunked_read_iter_funnyread() {

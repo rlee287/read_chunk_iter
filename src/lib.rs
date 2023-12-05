@@ -4,4 +4,6 @@
 
 mod simple;
 
+pub(crate) mod dev_helpers;
+
 pub use simple::ChunkedReaderIter;
