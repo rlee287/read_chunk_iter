@@ -70,11 +70,16 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
                 Ok(0) => { break; }
                 Ok(n) => { read_offset += n; },
                 Err(e) if e.kind() == ErrorKind::Interrupted => { /* continue */ }
-                Err(e) => { return Some(Err(e)) },
+                Err(e) => {
+                    // Shrink Vec back to how much was actually read
+                    self.buf.truncate(read_offset);
+                    return Some(Err(e))
+                },
             }
         }
         if read_offset == 0 {
             // We hit EOF and ran out of buffer contents
+            self.buf.clear();
             return None;
         }
         // Shrink Vec back to how much was actually read
