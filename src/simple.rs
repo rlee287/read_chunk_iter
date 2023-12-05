@@ -96,7 +96,7 @@ mod tests {
 
     use std::io::Cursor;
 
-    use crate::dev_helpers::FunnyRead;
+    use crate::dev_helpers::{FunnyRead, IceCubeRead};
 
     #[test]
     fn chunked_read_iter_funnyread() {
@@ -105,6 +105,20 @@ mod tests {
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[0,1,2,3]);
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[4,5,6,7]);
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[8,9,10,11]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[12,13,14,15]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[16,17,18,19]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[20,21,22,23]);
+    }
+    #[test]
+    fn chunked_read_iter_icecuberead() {
+        let funny_read = IceCubeRead::default();
+        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 2, 5);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[9,99]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[0x99,9]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[99,0x99]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
+        assert!(funny_read_iter.next().is_none());
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[9,99]);
     }
 
     #[test]
