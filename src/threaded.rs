@@ -4,8 +4,11 @@ use std::io::Result as IOResult;
 use std::thread::JoinHandle;
 use std::thread::spawn as thread_spawn;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{Receiver, sync_channel};
+
+use atomic_wait::{wait, wake_all};
+use std::ops::Deref;
 
 /// An iterator adapter for readers that yields chunks of bytes in a `Box<[u8]>` and performs reads asynchronously via a thread.
 /// 
@@ -17,6 +20,8 @@ pub struct ThreadedChunkedReaderIter<R> {
     buf_count: usize,
     channel_receiver: Receiver<IOResult<Box<[u8]>>>,
     stop_flag: Arc<AtomicBool>,
+    // Semantically this is a bool but atomic_wait only supports U32
+    unpause_flag: Arc<AtomicU32>
 }
 impl<R: Send> ThreadedChunkedReaderIter<R>
 {
@@ -48,18 +53,28 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
     /// Panics if `chunk_size` is 0.
     pub fn new(mut reader: R, chunk_size: usize, buf_count: usize) -> Self {
         assert!(chunk_size > 0);
+
         let stop_flag = Arc::new(AtomicBool::new(false));
+        let unpause_flag = Arc::new(AtomicU32::new(1));
         let (tx, rx) = sync_channel(buf_count);
+
         let reader_thread_handle = {
             let stop_flag = stop_flag.clone();
+            let unpause_flag = unpause_flag.clone();
+
             thread_spawn(move || {
                 let buf_size = match buf_count {
                     0 => chunk_size,
                     len => len*chunk_size
                 };
                 let mut buf = Vec::with_capacity(buf_size);
+                // Code modified from ChunkedReaderIter::next()
                 'read_loop: while !stop_flag.load(Ordering::Acquire) {
-                    // Code borrowed from ChunkedReaderIter::next()
+                    // unpause_flag only gets set if we hit EOF earlier
+                    // If we did, we don't want to retry until newly requested
+                    // Otherwise we get stuck in a spinloop of reading nothing
+                    wait(&unpause_flag, 0);
+
                     let mut read_offset = buf.len();
                     // Temporarily resize Vec to try to fill it
                     // Due to initialization with `with_capacity` we do not need to reallocate
@@ -88,8 +103,17 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                     if read_offset == 0 {
                         // We hit EOF and ran out of buffer contents
                         buf.clear();
-                        let _ = tx.send(Ok(Box::default()));
-                        break;
+                        // Store a false value so that we wait until another
+                        // read is requested.
+                        // Delay between store and wait doesn't matter.
+                        // If it gets set back to 1 in the meantime then
+                        // we want to continue anyways
+                        // TODO: does the send need to be before the store?
+                        unpause_flag.store(0, Ordering::Release);
+                        match tx.send(Ok(Box::default())) {
+                            Ok(_) => { continue 'read_loop; },
+                            Err(_) => { break 'read_loop; }
+                        }
                     }
                     // Shrink Vec back to how much was actually read
                     buf.truncate(read_offset);
@@ -109,7 +133,7 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                 reader
             })
         };
-        Self { reader_thread_handle, chunk_size, buf_count, channel_receiver: rx, stop_flag }
+        Self { reader_thread_handle, chunk_size, buf_count, channel_receiver: rx, stop_flag, unpause_flag }
     }
 }
 impl<R: Read+Seek+Send+'static> ThreadedChunkedReaderIter<R> {
@@ -130,6 +154,12 @@ impl<R> Iterator for ThreadedChunkedReaderIter<R> {
     /// EOF may be hit more than once, resulting in more chunks after a chunk smaller than `self.chunk_size` or more chunks after yielding `None`.
     /// (This is also a concern with the base [`Read`] trait, which may return more data even after returning `Ok(0)`).
     fn next(&mut self) -> Option<Self::Item> {
+        // Swap in a true value for whatever was there before
+        // If a false value was there previously, then the thread is waiting
+        // So we need to wake the thread
+        if self.unpause_flag.swap(1, Ordering::AcqRel) == 0 {
+            wake_all(self.unpause_flag.deref());
+        }
         match self.channel_receiver.recv() {
             Ok(Ok(data)) if data.len()==0 => None,
             Ok(Ok(data)) => Some(Ok(data)),
