@@ -137,6 +137,18 @@ mod tests {
         assert!(data_chunk_iter.next().is_none());
     }
     #[test]
+    fn chunked_read_iter_cursor_while() {
+        let data_buf = [1,2,3,4,5,6,7,8,9];
+        let data_cursor = Cursor::new(data_buf);
+
+        let data_chunks: Vec<_> = ChunkedReaderIter::new(data_cursor, 4, 8).collect();
+        let data_chunks_as_slice: Vec<&[u8]> = data_chunks.iter()
+            .map(|r| r.as_ref().unwrap().as_ref())
+            .collect();
+        let expected_data_chunks: &[&[u8]] = &[&[1,2,3,4], &[5,6,7,8], &[9]];
+        assert_eq!(data_chunks_as_slice.as_slice(), expected_data_chunks);
+    }
+    #[test]
     fn chunked_read_iter_cursor_large_buf_eq_chunk() {
         let data_buf = [1,2,3,4,5,6,7,8,9];
         let data_cursor = Cursor::new(data_buf);
