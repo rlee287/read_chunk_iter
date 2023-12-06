@@ -13,12 +13,14 @@ use std::ops::Deref;
 /// An iterator adapter for readers that yields chunks of bytes in a `Box<[u8]>` and performs reads asynchronously via a thread.
 /// 
 #[derive(Debug)]
-pub struct ThreadedChunkedReaderIter<R> {
+pub struct ThreadedChunkedReaderIter<R: Send> {
     // Thread yields back the reader so we can still do into_inner
-    reader_thread_handle: JoinHandle<R>,
+    // This is an Option<> so that we can take() from it in destructor
+    reader_thread_handle: Option<JoinHandle<R>>,
     chunk_size: usize,
     buf_count: usize,
-    channel_receiver: Receiver<IOResult<Box<[u8]>>>,
+    // This is an Option<> so that we can take() from it in destructor
+    channel_receiver: Option<Receiver<IOResult<Box<[u8]>>>>,
     stop_flag: Arc<AtomicBool>,
     // Semantically this is a bool but atomic_wait only supports U32
     unpause_flag: Arc<AtomicU32>
@@ -26,10 +28,13 @@ pub struct ThreadedChunkedReaderIter<R> {
 impl<R: Send> ThreadedChunkedReaderIter<R>
 {
     /// Returns the wrapped reader. Warning: buffered read data will be lost, which can occur if `buf_size > chunk_size`.
-    pub fn into_inner(self) -> R {
+    pub fn into_inner(mut self) -> R {
+        self.unpause_flag.store(1, Ordering::Release);
+        wake_all(self.unpause_flag.deref());
         self.stop_flag.store(true, Ordering::Release);
-        drop(self.channel_receiver);
-        self.reader_thread_handle.join().unwrap()
+        // Take and drop the receiver so that thread sends error
+        drop(self.channel_receiver.take());
+        self.reader_thread_handle.take().unwrap().join().unwrap()
     }
     /// Returns the chunk size which is yielded by the iterator.
     pub fn chunk_size(&self) -> usize {
@@ -133,7 +138,7 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                 reader
             })
         };
-        Self { reader_thread_handle, chunk_size, buf_count, channel_receiver: rx, stop_flag, unpause_flag }
+        Self { reader_thread_handle: Some(reader_thread_handle), chunk_size, buf_count, channel_receiver: Some(rx), stop_flag, unpause_flag }
     }
 }
 impl<R: Read+Seek+Send+'static> ThreadedChunkedReaderIter<R> {
@@ -144,7 +149,7 @@ impl<R: Read+Seek+Send+'static> ThreadedChunkedReaderIter<R> {
         Self::new(reader, chunk_size, buf_count)
     }
 }
-impl<R> Iterator for ThreadedChunkedReaderIter<R> {
+impl<R: Send> Iterator for ThreadedChunkedReaderIter<R> {
     type Item = IOResult<Box<[u8]>>;
 
     /// Yields `self.chunk_size` bytes at a time until reaching EOF, after which it yields the remaining bytes before returning `None`.
@@ -160,19 +165,29 @@ impl<R> Iterator for ThreadedChunkedReaderIter<R> {
         if self.unpause_flag.swap(1, Ordering::AcqRel) == 0 {
             wake_all(self.unpause_flag.deref());
         }
-        match self.channel_receiver.recv() {
-            Ok(Ok(data)) if data.len()==0 => None,
-            Ok(Ok(data)) => Some(Ok(data)),
-            Ok(Err(e)) => Some(Err(e)),
-            Err(_) => None,
+        if let Some(ref rx) = self.channel_receiver {
+                match rx.recv() {
+                Ok(Ok(data)) if data.len()==0 => None,
+                Ok(Ok(data)) => Some(Ok(data)),
+                Ok(Err(e)) => Some(Err(e)),
+                Err(_) => None,
+            }
+        } else {
+            unreachable!("self.channel_receiver deinitialized while in use")
         }
     }
 }
-// Don't think we need a drop impl as we drop the receiver, which leads to Err
-// when sending in the thread, which leads the thread to exit on its own
-/*impl<R> Drop for ThreadedChunkedReaderIter<R> {
+
+impl<R: Send> Drop for ThreadedChunkedReaderIter<R> {
     fn drop(&mut self) {
+        self.unpause_flag.store(1, Ordering::Release);
+        wake_all(self.unpause_flag.deref());
         self.stop_flag.store(true, Ordering::Release);
-        //self.reader_thread_handle.join().unwrap();
+        // Take and drop the receiver, if live, so that thread sends error
+        drop(self.channel_receiver.take());
+        // Wait for thread to stop if it hasn't already
+        if let Some(handle) = self.reader_thread_handle.take() {
+            handle.join().unwrap();
+        }
     }
-}*/
+}
