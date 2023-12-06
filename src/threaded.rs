@@ -29,9 +29,11 @@ impl<R: Send> ThreadedChunkedReaderIter<R>
 {
     /// Returns the wrapped reader. Warning: buffered read data will be lost, which can occur if `buf_size > chunk_size`.
     pub fn into_inner(mut self) -> R {
-        self.unpause_flag.store(1, Ordering::Release);
-        wake_all(self.unpause_flag.deref());
         self.stop_flag.store(true, Ordering::Release);
+        // Unpause and wake the thread if necessary
+        if self.unpause_flag.swap(1, Ordering::AcqRel) == 0 {
+            wake_all(self.unpause_flag.deref());
+        }
         // Take and drop the receiver so that thread sends error
         drop(self.channel_receiver.take());
         self.reader_thread_handle.take().unwrap().join().unwrap()
@@ -113,7 +115,6 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                         // Delay between store and wait doesn't matter.
                         // If it gets set back to 1 in the meantime then
                         // we want to continue anyways
-                        // TODO: does the send need to be before the store?
                         unpause_flag.store(0, Ordering::Release);
                         match tx.send(Ok(Box::default())) {
                             Ok(_) => { continue 'read_loop; },
@@ -126,9 +127,12 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                     if chunk_size > buf.len() {
                         // Yield the remaining data at EOF
                         let boxed_data: Box<[u8]> = buf.drain(..).collect();
-                        // When we are exiting we don't care if the send succeeds
-                        let _ = tx.send(Ok(boxed_data));
-                        break;
+                        match tx.send(Ok(boxed_data)) {
+                            Ok(_) => { continue 'read_loop; },
+                            Err(_) => { break 'read_loop; }
+                        }
+                        // We continue so that next iteration hits EOF again
+                        // Then we trigger the wait logic
                     } else {
                         if tx.send(Ok(buf.drain(..chunk_size).collect())).is_err() {
                             break;
@@ -173,6 +177,7 @@ impl<R: Send> Iterator for ThreadedChunkedReaderIter<R> {
                 Err(_) => None,
             }
         } else {
+            // self.channel_receiver should always be live unless in destructor
             unreachable!("self.channel_receiver deinitialized while in use")
         }
     }
@@ -180,9 +185,15 @@ impl<R: Send> Iterator for ThreadedChunkedReaderIter<R> {
 
 impl<R: Send> Drop for ThreadedChunkedReaderIter<R> {
     fn drop(&mut self) {
-        self.unpause_flag.store(1, Ordering::Release);
-        wake_all(self.unpause_flag.deref());
+        // This is similar to what happens in self.into_inner(), except that
+        // self.into_inner() may have already stopped the thread before we
+        // get here. Most of the cleanup is idempotent but do checks on the
+        // steps that aren't
         self.stop_flag.store(true, Ordering::Release);
+        // Unpause and wake the thread if necessary
+        if self.unpause_flag.swap(1, Ordering::AcqRel) == 0 {
+            wake_all(self.unpause_flag.deref());
+        }
         // Take and drop the receiver, if live, so that thread sends error
         drop(self.channel_receiver.take());
         // Wait for thread to stop if it hasn't already
