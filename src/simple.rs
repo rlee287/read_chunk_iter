@@ -101,7 +101,7 @@ mod tests {
 
     use std::io::Cursor;
 
-    use crate::dev_helpers::{FunnyRead, IceCubeRead};
+    use crate::dev_helpers::{FunnyRead, IceCubeRead, TruncatedRead};
 
     #[test]
     fn chunked_read_iter_funnyread() {
@@ -124,6 +124,15 @@ mod tests {
         assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
         assert!(funny_read_iter.next().is_none());
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[9,99]);
+    }
+    #[test]
+    fn chunked_read_iter_truncatedread() {
+        let funny_read = TruncatedRead::default();
+        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 3, 3);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
+        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"mu");
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
     }
 
     #[test]

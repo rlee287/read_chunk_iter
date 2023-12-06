@@ -202,3 +202,95 @@ impl<R: Send> Drop for ThreadedChunkedReaderIter<R> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::io::Cursor;
+
+    use crate::dev_helpers::{FunnyRead, IceCubeRead, TruncatedRead};
+
+    #[test]
+    fn chunked_read_iter_funnyread() {
+        let funny_read = FunnyRead::default();
+        let mut funny_read_iter = ThreadedChunkedReaderIter::new(funny_read, 4, 2);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[0,1,2,3]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[4,5,6,7]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[8,9,10,11]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[12,13,14,15]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[16,17,18,19]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[20,21,22,23]);
+    }
+    #[test]
+    fn chunked_read_iter_icecuberead() {
+        let funny_read = IceCubeRead::default();
+        let mut funny_read_iter = ThreadedChunkedReaderIter::new(funny_read, 2, 5);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[9,99]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[0x99,9]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[99,0x99]);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
+        assert!(funny_read_iter.next().is_none());
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[9,99]);
+    }
+    #[test]
+    fn chunked_read_iter_truncatedread() {
+        let funny_read = TruncatedRead::default();
+        let mut funny_read_iter = ThreadedChunkedReaderIter::new(funny_read, 3, 1);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
+        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"mu");
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
+    }
+
+    #[test]
+    fn chunked_read_iter_cursor_large() {
+        let data_buf = [1,2,3,4,5,6,7,8,9];
+        let data_cursor = Cursor::new(data_buf);
+        let mut data_chunk_iter = ThreadedChunkedReaderIter::new(data_cursor, 4, 2);
+        assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[1,2,3,4]);
+        assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[5,6,7,8]);
+        assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[9]);
+        assert!(data_chunk_iter.next().is_none());
+    }
+    #[test]
+    fn chunked_read_iter_cursor_while() {
+        let data_buf = [1,2,3,4,5,6,7,8,9];
+        let data_cursor = Cursor::new(data_buf);
+
+        let data_chunks: Vec<_> = ThreadedChunkedReaderIter::new(data_cursor, 4, 2).collect();
+        let data_chunks_as_slice: Vec<&[u8]> = data_chunks.iter()
+            .map(|r| r.as_ref().unwrap().as_ref())
+            .collect();
+        let expected_data_chunks: &[&[u8]] = &[&[1,2,3,4], &[5,6,7,8], &[9]];
+        assert_eq!(data_chunks_as_slice.as_slice(), expected_data_chunks);
+    }
+    #[test]
+    fn chunked_read_iter_cursor_large_buf_eq_chunk() {
+        let data_buf = [1,2,3,4,5,6,7,8,9];
+        let data_cursor = Cursor::new(data_buf);
+        let mut data_chunk_iter = ThreadedChunkedReaderIter::new(data_cursor, 4, 1);
+        assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[1,2,3,4]);
+        assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[5,6,7,8]);
+        assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[9]);
+        assert!(data_chunk_iter.next().is_none());
+    }
+    #[test]
+    fn chunked_read_iter_cursor_large_buf_zero_chunk() {
+        let data_buf = [1,2,3,4,5,6,7,8,9];
+        let data_cursor = Cursor::new(data_buf);
+        let mut data_chunk_iter = ThreadedChunkedReaderIter::new(data_cursor, 4, 0);
+        assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[1,2,3,4]);
+        assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[5,6,7,8]);
+        assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[9]);
+        assert!(data_chunk_iter.next().is_none());
+    }
+    #[test]
+    fn chunked_read_iter_cursor_smol() {
+        let data_buf = [1,2,3];
+        let data_cursor = Cursor::new(data_buf);
+        let mut data_chunk_iter = ThreadedChunkedReaderIter::new(data_cursor, 4, 1);
+        assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[1,2,3]);
+        assert!(data_chunk_iter.next().is_none());
+    }
+}
