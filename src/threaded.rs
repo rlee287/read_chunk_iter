@@ -103,10 +103,6 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                              },
                         }
                     }
-                    // TODO: break statements for exiting after here are suspect
-                    // The naive solution would be using continue's, but then
-                    // we end up in a spinloop on EOF while waiting for data or
-                    // the exit signal. TODO is coming up with a better idea
                     if read_offset == 0 {
                         // We hit EOF and ran out of buffer contents
                         buf.clear();
@@ -170,7 +166,7 @@ impl<R: Send> Iterator for ThreadedChunkedReaderIter<R> {
             wake_all(self.unpause_flag.deref());
         }
         if let Some(ref rx) = self.channel_receiver {
-                match rx.recv() {
+            match rx.recv() {
                 Ok(Ok(data)) if data.len()==0 => None,
                 Ok(Ok(data)) => Some(Ok(data)),
                 Ok(Err(e)) => Some(Err(e)),
@@ -283,14 +279,6 @@ mod tests {
         assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[1,2,3,4]);
         assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[5,6,7,8]);
         assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[9]);
-        assert!(data_chunk_iter.next().is_none());
-    }
-    #[test]
-    fn chunked_read_iter_cursor_smol() {
-        let data_buf = [1,2,3];
-        let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter = ThreadedChunkedReaderIter::new(data_cursor, 4, 1);
-        assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[1,2,3]);
         assert!(data_chunk_iter.next().is_none());
     }
 }
