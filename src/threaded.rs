@@ -39,10 +39,12 @@ impl<R: Send> ThreadedChunkedReaderIter<R>
         self.reader_thread_handle.take().unwrap().join().unwrap()
     }
     /// Returns the chunk size which is yielded by the iterator.
+    #[inline]
     pub fn chunk_size(&self) -> usize {
         self.chunk_size
     }
     /// Returns the size of the buffer used to read from the underlying reader.
+    #[inline]
     pub fn buf_size(&self) -> usize {
         match self.buf_count {
             0 => self.chunk_size,

@@ -25,18 +25,22 @@ impl<R> ChunkedReaderIter<R>
     }
 
     /// Returns the wrapped reader. Warning: buffered read data will be lost, which can occur if `buf_size > chunk_size`.
+    #[inline]
     pub fn into_inner(self) -> R {
         self.reader
     }
     /// Returns the chunk size which is yielded by the iterator.
+    #[inline]
     pub fn chunk_size(&self) -> usize {
         self.chunk_size
     }
     /// Returns the size of the buffer used to read from the underlying reader.
+    #[inline]
     pub fn buf_size(&self) -> usize {
         self.buf_size
     }
     /// Returns a slice of the internal buffer used to buffer reads. The slice only contains valid buffered data, so it will be smaller than the value returned by [`Self::buf_size`].
+    #[inline]
     pub fn buf(&self) -> &[u8] {
         self.buf.as_ref()
     }
