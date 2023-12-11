@@ -56,6 +56,32 @@ mod funky {
             retval
         }
     }
+
+    // Yukari's way to annoy Reimu by imposing read boundaries
+    #[derive(Debug, Default)]
+    pub struct TruncatedRead {
+        data_vec: Vec<u8>,
+        state: usize
+    }
+    impl Read for TruncatedRead {
+        fn read(&mut self, buf: &mut [u8]) -> IOResult<usize> {
+            let retval = match self.state {
+                0..=1 => {
+                    if self.data_vec.len() == 0 {
+                        self.data_vec = Vec::from(b"reimu");
+                    }
+                    let copy_section: Vec<_> = self.data_vec.drain(..min(buf.len(), self.data_vec.len())).collect();
+                    buf[..copy_section.len()].copy_from_slice(&copy_section);
+                    Ok(copy_section.len())
+                },
+                2 => Err(ErrorKind::Other.into()),
+                3 => Ok(0),
+                _ => unreachable!()
+            };
+            self.state = (self.state+1) % 4;
+            retval
+        }
+    }
 }
 
 #[cfg(test)]
