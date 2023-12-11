@@ -123,12 +123,11 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                     if chunk_size > buf.len() {
                         // Yield the remaining data at EOF
                         let boxed_data: Box<[u8]> = buf.drain(..).collect();
+                        unpause_flag.store(0, Ordering::Release);
                         match tx.send(Ok(boxed_data)) {
                             Ok(_) => { continue 'read_loop; },
                             Err(_) => { break 'read_loop; }
                         }
-                        // We continue so that next iteration hits EOF again
-                        // Then we trigger the wait logic
                     } else {
                         if tx.send(Ok(buf.drain(..chunk_size).collect())).is_err() {
                             break;
