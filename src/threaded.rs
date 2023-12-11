@@ -129,11 +129,13 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                             Err(_) => { break 'read_loop; }
                         }
                     } else {
+                        let mut chunk_ctr = 0;
                         while read_offset >= chunk_size {
-                            match tx.try_send(Ok(buf[..chunk_size].iter().copied().collect())) {
+                            match tx.try_send(Ok(buf[chunk_ctr*chunk_size..(chunk_ctr+1)*chunk_size].iter().copied().collect())) {
                                 Ok(()) => {
                                     // OK to remove chunk from the vec
-                                    buf.drain(..chunk_size);
+                                    // Update bookkeeping but delay removal
+                                    chunk_ctr += 1;
                                     read_offset -= chunk_size;
                                 },
                                 Err(TrySendError::Full(b)) => {
@@ -144,8 +146,8 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                                         if tx.send(b).is_err() {
                                             break 'read_loop;
                                         }
-                                        // Successful send -> remove from vec
-                                        buf.drain(..chunk_size);
+                                        // Successful send -> can remove from vec
+                                        chunk_ctr += 1;
                                         read_offset -= chunk_size;
                                     }
                                 },
@@ -154,6 +156,8 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                                 },
                             }
                         }
+                        // OK to remove chunk from the vec
+                        buf.drain(..chunk_ctr*chunk_size);
                     }
                 }
                 reader
