@@ -27,7 +27,7 @@ pub struct ThreadedChunkedReaderIter<R: Send> {
 }
 impl<R: Send> ThreadedChunkedReaderIter<R>
 {
-    /// Returns the wrapped reader. Warning: buffered read data will be lost, which can occur if `buf_size > chunk_size`.
+    /// Returns the wrapped reader. Warning: buffered read data will be lost, which can occur if `buf_count > 1`.
     pub fn into_inner(mut self) -> R {
         self.stop_flag.store(true, Ordering::Release);
         // Unpause and wake the thread if necessary
@@ -53,7 +53,8 @@ impl<R: Send> ThreadedChunkedReaderIter<R>
 }
 impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
 {
-    /// Instantiates a new [`ThreadedChunkedReaderIter`] that tries to read up to `chunk_size*buf_count` bytes at a time and that yields `chunk_size` bytes as an iterator until reaching EOF.
+    /// Instantiates a new [`ThreadedChunkedReaderIter`] that asynchronously tries to read up to `chunk_size*buf_count` bytes at a time and that yields `chunk_size` bytes as an iterator until reaching EOF.
+    /// The use of a thread allows I/O reads to occur in the background while the program performs processing on the data.
     /// For readers that implement `Seek`, [`Self::new_with_rewind`] rewinds the given reader.
     /// 
     /// # Panics
@@ -123,6 +124,7 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                     if chunk_size > buf.len() {
                         // Yield the remaining data at EOF
                         let boxed_data: Box<[u8]> = buf.drain(..).collect();
+                        // Since we ran out of data, do a pause until more is requested
                         unpause_flag.store(0, Ordering::Release);
                         match tx.send(Ok(boxed_data)) {
                             Ok(_) => { continue 'read_loop; },
@@ -156,7 +158,7 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                                 },
                             }
                         }
-                        // OK to remove chunk from the vec
+                        // OK to remove chunks from the vec
                         buf.drain(..chunk_ctr*chunk_size);
                     }
                 }
