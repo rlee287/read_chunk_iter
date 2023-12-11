@@ -1,4 +1,4 @@
-use std::io::{Read, Seek, SeekFrom, ErrorKind};
+use std::io::{Read, Seek, ErrorKind};
 use std::io::Result as IOResult;
 
 use std::thread::JoinHandle;
@@ -145,7 +145,7 @@ impl<R: Read+Seek+Send+'static> ThreadedChunkedReaderIter<R> {
     /// Constructs a new [`ThreadedChunkedReaderIter`] that rewinds the reader to ensure that all data is yielded by the iterator.
     /// See [`ThreadedChunkedReaderIter::new`] for descriptions of the other parameters.
     pub fn new_with_rewind(mut reader: R, chunk_size: usize, buf_count: usize) -> Self {
-        reader.seek(SeekFrom::Start(0)).unwrap();
+        reader.rewind().unwrap();
         Self::new(reader, chunk_size, buf_count)
     }
 }
