@@ -5,7 +5,7 @@ use std::thread::JoinHandle;
 use std::thread::spawn as thread_spawn;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc::{Receiver, sync_channel};
+use std::sync::mpsc::{Receiver, TrySendError, sync_channel};
 
 use atomic_wait::{wait, wake_all};
 use std::ops::Deref;
@@ -129,8 +129,30 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                             Err(_) => { break 'read_loop; }
                         }
                     } else {
-                        if tx.send(Ok(buf.drain(..chunk_size).collect())).is_err() {
-                            break;
+                        while read_offset >= chunk_size {
+                            match tx.try_send(Ok(buf[..chunk_size].iter().copied().collect())) {
+                                Ok(()) => {
+                                    // OK to remove chunk from the vec
+                                    buf.drain(..chunk_size);
+                                    read_offset -= chunk_size;
+                                },
+                                Err(TrySendError::Full(b)) => {
+                                    // If the buffer isn't full, then go around
+                                    // and try to fill it up in the meantime
+                                    // If it is full, then block until it isn't
+                                    if buf.len() >= buf_size {
+                                        if tx.send(b).is_err() {
+                                            break 'read_loop;
+                                        }
+                                        // Successful send -> remove from vec
+                                        buf.drain(..chunk_size);
+                                        read_offset -= chunk_size;
+                                    }
+                                },
+                                Err(TrySendError::Disconnected(_)) => {
+                                    break 'read_loop;
+                                },
+                            }
                         }
                     }
                 }
