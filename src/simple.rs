@@ -1,14 +1,16 @@
 use std::io::{Read, Seek, ErrorKind};
 use std::io::Result as IOResult;
+use std::io::Error as IOError;
 
 /// An iterator adapter for readers that yields chunks of bytes in a `Box<[u8]>`.
 /// 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug)]
 pub struct ChunkedReaderIter<R> {
     reader: R,
     chunk_size: usize,
     buf_size: usize,
-    buf: Vec<u8>
+    buf: Vec<u8>,
+    io_error_stash: Option<IOError>
 }
 impl<R> ChunkedReaderIter<R>
 {
@@ -21,7 +23,7 @@ impl<R> ChunkedReaderIter<R>
         assert!(chunk_size > 0);
         assert!(buf_size > 0);
         assert!(buf_size >= chunk_size);
-        Self { reader, chunk_size, buf_size, buf: Vec::with_capacity(buf_size) }
+        Self { reader, chunk_size, buf_size, buf: Vec::with_capacity(buf_size), io_error_stash: None }
     }
 
     /// Returns the wrapped reader. Warning: buffered read data will be lost, which can occur if `buf_size > chunk_size`.
@@ -58,12 +60,16 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
     type Item = IOResult<Box<[u8]>>;
 
     /// Yields `self.chunk_size` bytes at a time until reaching EOF, after which it yields the remaining bytes before returning `None`.
-    /// All bytes successfully read are eventually returned: if reads into the buffer result in an error, the error is passed up, but the successfully read data will be returned the next time the buffer is successfully filled.
+    /// All bytes successfully read are eventually returned: if reads into the buffer result in an error, the previously read data is yielded first, and then the error is passed up.
     /// 
     /// Note: If reading from a readable object that is being concurrently modified (e.g. a file that is being appended to by another process),
     /// EOF may be hit more than once, resulting in more chunks after a chunk smaller than `self.chunk_size` or more chunks after yielding `None`.
     /// (This is also a concern with the base [`Read`] trait, which may return more data even after returning `Ok(0)`).
     fn next(&mut self) -> Option<Self::Item> {
+        if self.io_error_stash.is_some() {
+            let err_obj = self.io_error_stash.take().unwrap();
+            return Some(Err(err_obj));
+        }
         let mut read_offset = self.buf.len();
         // Temporarily resize Vec to try to fill it
         // Due to initialization with `with_capacity` we do not need to reallocate
@@ -77,6 +83,13 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
                 Err(e) => {
                     // Shrink Vec back to how much was actually read
                     self.buf.truncate(read_offset);
+                    // Yield currently read data before yielding Err
+                    if read_offset > 0 {
+                        assert!(self.io_error_stash.is_none());
+                        self.io_error_stash = Some(e);
+                        let boxed_data: Box<[u8]> = self.buf.drain(..).collect();
+                        return Some(Ok(boxed_data));
+                    }
                     return Some(Err(e))
                 },
             }
@@ -134,8 +147,9 @@ mod tests {
         let funny_read = TruncatedRead::default();
         let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 3, 3);
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
-        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"mu");
+        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
+        assert!(funny_read_iter.next().is_none());
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
     }
 
