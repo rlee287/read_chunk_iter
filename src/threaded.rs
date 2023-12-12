@@ -98,6 +98,15 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                             Err(e) => {
                                 // Shrink Vec back to how much was actually read
                                 buf.truncate(read_offset);
+                                // Yield currently read data before yielding Err
+                                if read_offset > 0 {
+                                    let boxed_data: Box<[u8]> = buf.drain(..).collect();
+                                    if tx.send(Ok(boxed_data)).is_err() {
+                                        break 'read_loop;
+                                    }
+                                }
+                                // IOError -> no more data -> pause until more is requested
+                                unpause_flag.store(0, Ordering::Release);
                                 // On send error we no longer have anyone listening
                                 match tx.send(Err(e)) {
                                     Ok(_) => { continue 'read_loop; },
@@ -182,7 +191,7 @@ impl<R: Send> Iterator for ThreadedChunkedReaderIter<R> {
     type Item = IOResult<Box<[u8]>>;
 
     /// Yields `self.chunk_size` bytes at a time until reaching EOF, after which it yields the remaining bytes before returning `None`.
-    /// All bytes successfully read are eventually returned: if reads into the buffer result in an error, the error is passed up, but the successfully read data will be returned the next time the buffer is successfully filled.
+    /// All bytes successfully read are eventually returned: if reads into the buffer result in an error, the previously read data is yielded first, and then the error is passed up.
     /// 
     /// Note: If reading from a readable object that is being concurrently modified (e.g. a file that is being appended to by another process),
     /// EOF may be hit more than once, resulting in more chunks after a chunk smaller than `self.chunk_size` or more chunks after yielding `None`.
@@ -263,8 +272,9 @@ mod tests {
         let funny_read = TruncatedRead::default();
         let mut funny_read_iter = ThreadedChunkedReaderIter::new(funny_read, 3, 1);
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
-        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"mu");
+        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
+        assert!(funny_read_iter.next().is_none());
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
     }
 
