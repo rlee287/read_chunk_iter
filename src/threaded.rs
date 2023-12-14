@@ -132,7 +132,7 @@ impl<R: Read+Send+'static> ThreadedChunkedReaderIter<R>
                     // Shrink Vec back to how much was actually read
                     buf.truncate(read_offset);
 
-                    if chunk_size > buf.len() {
+                    if chunk_size > read_offset {
                         // Yield the remaining data at EOF
                         let boxed_data: Box<[u8]> = buf.drain(..).collect();
                         // Since we ran out of data, do a pause until more is requested
@@ -276,6 +276,18 @@ mod tests {
         assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
         assert!(funny_read_iter.next().is_none());
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
+    }
+    #[test]
+    fn chunked_read_iter_truncatedread_large() {
+        let funny_read = TruncatedRead::default();
+        let mut funny_read_iter = ThreadedChunkedReaderIter::new(funny_read, 11, 22);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"reimureimu");
+        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
+        assert!(funny_read_iter.next().is_none());
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"reimureimu");
+        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
+        assert!(funny_read_iter.next().is_none());
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"reimureimu");
     }
 
     #[test]

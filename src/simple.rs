@@ -169,6 +169,18 @@ mod tests {
         assert!(funny_read_iter.next().is_none());
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
     }
+    #[test]
+    fn chunked_read_iter_truncatedread_large() {
+        let funny_read = TruncatedRead::default();
+        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 11, 22);
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"reimureimu");
+        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
+        assert!(funny_read_iter.next().is_none());
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"reimureimu");
+        assert_eq!(funny_read_iter.next().unwrap().unwrap_err().kind(), ErrorKind::Other);
+        assert!(funny_read_iter.next().is_none());
+        assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"reimureimu");
+    }
 
     #[test]
     fn chunked_read_iter_cursor_large() {
