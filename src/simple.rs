@@ -10,6 +10,7 @@ pub struct ChunkedReaderIter<R> {
     chunk_size: usize,
     buf_size: usize,
     buf: Vec<u8>,
+    undrained_byte_count: usize,
     io_error_stash: Option<IOError>
 }
 impl<R> ChunkedReaderIter<R>
@@ -23,7 +24,7 @@ impl<R> ChunkedReaderIter<R>
         assert!(chunk_size > 0);
         assert!(buf_size > 0);
         assert!(buf_size >= chunk_size);
-        Self { reader, chunk_size, buf_size, buf: Vec::with_capacity(buf_size), io_error_stash: None }
+        Self { reader, chunk_size, buf_size, buf: Vec::with_capacity(buf_size), undrained_byte_count: 0, io_error_stash: None }
     }
 
     /// Returns the wrapped reader. Warning: buffered read data will be lost, which can occur if `buf_size > chunk_size`.
@@ -71,6 +72,7 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
             return Some(Err(err_obj));
         }
         let mut read_offset = self.buf.len();
+        assert!(self.undrained_byte_count <= read_offset);
         // Temporarily resize Vec to try to fill it
         // Due to initialization with `with_capacity` we do not need to reallocate
         self.buf.resize(self.buf_size, 0x00);
@@ -87,27 +89,42 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
                     if read_offset > 0 {
                         assert!(self.io_error_stash.is_none());
                         self.io_error_stash = Some(e);
-                        let boxed_data: Box<[u8]> = self.buf.drain(..).collect();
+                        let boxed_data: Box<[u8]> = self.buf.drain(self.undrained_byte_count..).collect();
+                        self.undrained_byte_count = 0;
                         return Some(Ok(boxed_data));
                     }
                     return Some(Err(e))
                 },
             }
         }
-        if read_offset == 0 {
+        // How much data in the buffer has not been yielded yet?
+        let unyielded_count = read_offset - self.undrained_byte_count;
+        if unyielded_count == 0 {
             // We hit EOF and ran out of buffer contents
             self.buf.clear();
+            self.undrained_byte_count = 0;
             return None;
         }
         // Shrink Vec back to how much was actually read
         self.buf.truncate(read_offset);
 
-        if self.chunk_size > self.buf.len() {
+        // We keep stale, already-yielded data and don't memmove every time
+        // In order to reduce the performance penalty of such memory accesses
+        if self.chunk_size > unyielded_count {
             // Yield the remaining data at EOF
-            let boxed_data: Box<[u8]> = self.buf.drain(..).collect();
+            let boxed_data: Box<[u8]> = self.buf.drain(self.undrained_byte_count..).collect();
+            self.buf.clear();
+            self.undrained_byte_count = 0;
             Some(Ok(boxed_data))
         } else {
-            Some(Ok(self.buf.drain(..self.chunk_size).collect()))
+            let ret_buf = self.buf[self.undrained_byte_count..self.undrained_byte_count+self.chunk_size].iter().copied().collect();
+            self.undrained_byte_count += self.chunk_size;
+            assert!(read_offset >= self.undrained_byte_count);
+            if read_offset - self.undrained_byte_count < self.chunk_size {
+                self.buf.drain(..self.undrained_byte_count);
+                self.undrained_byte_count = 0;
+            }
+            Some(Ok(ret_buf))
         }
     }
 }
