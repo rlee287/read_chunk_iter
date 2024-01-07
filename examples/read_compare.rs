@@ -1,12 +1,12 @@
 use std::env::args;
 
-use std::io::{BufReader, Read};
 use std::fs::File;
+use std::io::{BufReader, Read};
 
 use itertools::Itertools;
 
-use poly1305::Poly1305;
 use poly1305::universal_hash::{KeyInit, UniversalHash};
+use poly1305::Poly1305;
 use read_chunk_iter::{ChunkedReaderIter, ThreadedChunkedReaderIter};
 
 // This is the default buffer size for a BufReader
@@ -16,7 +16,10 @@ fn main() -> Result<(), String> {
     let args: Vec<_> = args().collect();
     if args.len() != 3 {
         eprintln!("Got wrong number of arguments: args {:?}", args);
-        return Err(format!("Usage: {} (bufread|simple|threaded) filename", args[0]));
+        return Err(format!(
+            "Usage: {} (bufread|simple|threaded) filename",
+            args[0]
+        ));
     }
     let mut hash_obj = Poly1305::new_from_slice(&[0x13; 32]).unwrap();
     let file = File::open(&args[2]).map_err(|e| format!("Error opening file: {}", e))?;
@@ -41,7 +44,10 @@ fn main() -> Result<(), String> {
         }
         _ => {
             eprintln!("Got method {}", args[1]);
-            return Err(format!("Usage: {} (bufread|simple|threaded) filename", args[0]));
+            return Err(format!(
+                "Usage: {} (bufread|simple|threaded) filename",
+                args[0]
+            ));
         }
     }
     for byte in hash_obj.finalize() {
