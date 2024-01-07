@@ -2,3 +2,5 @@
 /Cargo.lock
 
 lcov.info
+
+examples/random_bytes.bin
