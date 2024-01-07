@@ -116,6 +116,12 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
                     // If we did, we don't want to retry until newly requested
                     // Otherwise we get stuck in a spinloop of reading nothing
                     wait(&unpause_flag, 0);
+                    // Don't try to read again if we're supposed to stop
+                    // Primarily for faster exits, but also needed to ensure
+                    // that we don't end up with two IOErrors in the queue
+                    if stop_flag.load(Ordering::Acquire) {
+                        break 'read_loop;
+                    }
 
                     let mut read_offset = buf.len();
                     // Temporarily resize Vec to try to fill it
