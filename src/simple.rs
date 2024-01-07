@@ -2,11 +2,14 @@ use std::io::Error as IOError;
 use std::io::Result as IOResult;
 use std::io::{ErrorKind, Read, Seek};
 
+use crate::vectored_read::{VectoredReadSelect, resolve_read_vectored, read_vectored_into_buf};
+
 /// An iterator adapter for readers that yields chunks of bytes in a `Box<[u8]>`.
 ///
 #[derive(Debug)]
 pub struct ChunkedReaderIter<R> {
     reader: R,
+    reader_vectored: VectoredReadSelect,
     chunk_size: usize,
     buf_size: usize,
     buf: Vec<u8>,
@@ -19,12 +22,13 @@ impl<R> ChunkedReaderIter<R> {
     ///
     /// # Panics
     /// Panics if `buf_size` is smaller than `chunk_size` or if either are 0.
-    pub fn new(reader: R, chunk_size: usize, buf_size: usize) -> Self {
+    pub fn new(reader: R, chunk_size: usize, buf_size: usize, reader_vectored: VectoredReadSelect) -> Self {
         assert!(chunk_size > 0);
         assert!(buf_size > 0);
         assert!(buf_size >= chunk_size);
         Self {
             reader,
+            reader_vectored,
             chunk_size,
             buf_size,
             buf: Vec::with_capacity(buf_size),
@@ -57,9 +61,9 @@ impl<R> ChunkedReaderIter<R> {
 impl<R: Seek> ChunkedReaderIter<R> {
     /// Constructs a new [`ChunkedReaderIter`] that rewinds the reader to ensure that all data is yielded by the iterator.
     /// See [`ChunkedReaderIter::new`] for descriptions of the other parameters.
-    pub fn new_with_rewind(mut reader: R, chunk_size: usize, buf_size: usize) -> Self {
+    pub fn new_with_rewind(mut reader: R, chunk_size: usize, buf_size: usize, reader_vectored: VectoredReadSelect) -> Self {
         reader.rewind().unwrap();
-        Self::new(reader, chunk_size, buf_size)
+        Self::new(reader, chunk_size, buf_size, reader_vectored)
     }
 }
 
@@ -84,7 +88,11 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
         self.buf.resize(self.buf_size, 0x00);
         // Try to fill entire buf, but we're good if we have a whole chunk
         while read_offset < self.chunk_size {
-            match self.reader.read(&mut self.buf[read_offset..]) {
+            let reader_result = match resolve_read_vectored(&self.reader, self.reader_vectored) {
+                true => read_vectored_into_buf(&mut self.reader, &mut self.buf[read_offset..], self.chunk_size),
+                false => self.reader.read(&mut self.buf[read_offset..])
+            };
+            match reader_result {
                 Ok(0) => {
                     break;
                 }
@@ -155,7 +163,7 @@ mod tests {
     #[test]
     fn chunked_read_iter_funnyread() {
         let funny_read = FunnyRead::default();
-        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 4, 5);
+        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 4, 5, VectoredReadSelect::Yes);
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
             &[0, 1, 2, 3]
@@ -184,7 +192,7 @@ mod tests {
     #[test]
     fn chunked_read_iter_icecuberead() {
         let funny_read = IceCubeRead::default();
-        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 2, 5);
+        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 2, 5, VectoredReadSelect::No);
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[9, 99]);
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
@@ -204,7 +212,7 @@ mod tests {
     #[test]
     fn chunked_read_iter_truncatedread() {
         let funny_read = TruncatedRead::default();
-        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 3, 3);
+        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 3, 3, VectoredReadSelect::No);
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"mu");
         assert_eq!(
@@ -217,7 +225,7 @@ mod tests {
     #[test]
     fn chunked_read_iter_truncatedread_large() {
         let funny_read = TruncatedRead::default();
-        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 11, 22);
+        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 11, 22, VectoredReadSelect::No);
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
             b"reimureimu"
@@ -246,7 +254,7 @@ mod tests {
     fn chunked_read_iter_cursor_large() {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter = ChunkedReaderIter::new(data_cursor, 4, 8);
+        let mut data_chunk_iter = ChunkedReaderIter::new(data_cursor, 4, 8, VectoredReadSelect::No);
         assert_eq!(
             data_chunk_iter.next().unwrap().unwrap().as_ref(),
             &[1, 2, 3, 4]
@@ -263,7 +271,7 @@ mod tests {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
 
-        let data_chunks: Vec<_> = ChunkedReaderIter::new(data_cursor, 4, 8).collect();
+        let data_chunks: Vec<_> = ChunkedReaderIter::new(data_cursor, 4, 8, VectoredReadSelect::No).collect();
         let data_chunks_as_slice: Vec<&[u8]> = data_chunks
             .iter()
             .map(|r| r.as_ref().unwrap().as_ref())
@@ -275,7 +283,7 @@ mod tests {
     fn chunked_read_iter_cursor_large_buf_eq_chunk() {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter = ChunkedReaderIter::new(data_cursor, 4, 4);
+        let mut data_chunk_iter = ChunkedReaderIter::new(data_cursor, 4, 4, VectoredReadSelect::No);
         assert_eq!(
             data_chunk_iter.next().unwrap().unwrap().as_ref(),
             &[1, 2, 3, 4]
@@ -291,7 +299,7 @@ mod tests {
     fn chunked_read_iter_cursor_smol() {
         let data_buf = [1, 2, 3];
         let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter = ChunkedReaderIter::new(data_cursor, 4, 4);
+        let mut data_chunk_iter = ChunkedReaderIter::new(data_cursor, 4, 4, VectoredReadSelect::No);
         assert_eq!(
             data_chunk_iter.next().unwrap().unwrap().as_ref(),
             &[1, 2, 3]

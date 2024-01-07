@@ -2,7 +2,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 
 use itertools::Itertools;
 
-use read_chunk_iter::{ChunkedReaderIter, ThreadedChunkedReaderIter};
+use read_chunk_iter::{ChunkedReaderIter, ThreadedChunkedReaderIter, VectoredReadSelect};
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, Write};
@@ -22,7 +22,7 @@ fn do_std_iter_bufread(file: File, chunk_size: usize) {
     }
 }
 fn do_chunked_read(file: File, chunk_size: usize, multiplier: usize) {
-    let read_iter = ChunkedReaderIter::new(file, chunk_size, chunk_size * multiplier);
+    let read_iter = ChunkedReaderIter::new(file, chunk_size, chunk_size * multiplier, VectoredReadSelect::No);
     for chunk in read_iter {
         assert_eq!(chunk.unwrap().as_ref(), vec![0xf0; chunk_size].as_slice());
     }
@@ -34,7 +34,7 @@ fn do_threaded_chunked_read(file: File, chunk_size: usize, multiplier: usize) {
     }
 }
 fn do_chunked_read_hash(file: File, chunk_size: usize, multiplier: usize) {
-    let read_iter = ChunkedReaderIter::new(file, chunk_size, chunk_size * multiplier);
+    let read_iter = ChunkedReaderIter::new(file, chunk_size, chunk_size * multiplier, VectoredReadSelect::No);
     let mut hash_obj = Poly1305::new_from_slice(&[0x13; 32]).unwrap();
     for chunk in read_iter {
         hash_obj.update_padded(&chunk.unwrap());

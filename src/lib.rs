@@ -13,5 +13,7 @@ mod vectored_read;
 
 pub(crate) mod dev_helpers;
 
+pub use vectored_read::VectoredReadSelect;
+
 pub use simple::ChunkedReaderIter;
 pub use threaded::ThreadedChunkedReaderIter;
