@@ -15,6 +15,8 @@ This crate offers two alternatives:
 - `ChunkedReaderIter`, which synchronously reads from the underlying `Read` object and yields chunks of data when requested.
 - `ThreadedChunkedReaderIter`, which performs the reads in a separate thread and transmits chunks of data to the originating thread.
 
+Whether to use `ChunkedReaderIter` or `ThreadedChunkedReaderIter` depends on whether the saved time of asynchronous reads while doing other computations outweighs the overhead of threading. *Benchmark your particular use case before assuming that one is necessarily better than the other.*
+
 ## Planned features
 
 - Use vectored reads when applicable to take advantage of speedups that they may offer.
