@@ -3,7 +3,7 @@ name = "read_chunk_iter"
 version = "0.1.0"
 edition = "2018"
 license = "MIT"
-description = "An iterator adapter over a reader that yields fixed-size chunks at a time."
+description = "Iterator adapters over a reader that yield fixed-size chunks at a time."
 repository = "https://github.com/rlee287/read_chunk_iter"
 readme = "README.md"
 
