@@ -15,7 +15,9 @@ This crate offers two alternatives:
 - `ChunkedReaderIter`, which synchronously reads from the underlying `Read` object and yields chunks of data when requested.
 - `ThreadedChunkedReaderIter`, which performs the reads in a separate thread and transmits chunks of data to the originating thread.
 
+# Features
+- autodetect_vectored: Enable automatic detection of whether vectored reads offer speedups, and take advantage of them when they offer speedups. This feature requires nightly, but manual selection of vectored reads is still possible without it.
+
 ## Planned features
 
-- Use vectored reads when applicable to take advantage of speedups that they may offer.
 - fadvise: Use `posix_fadvise` to signal `POSIX_FADV_SEQUENTIAL` for the whole file and to provide the option to free filesystem cache with `POSIX_FADV_DONTNEED` on yielded data. This feature will be enabled by default but will be a no-op on non-Unix systems.
