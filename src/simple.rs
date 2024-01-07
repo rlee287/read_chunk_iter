@@ -37,10 +37,12 @@ impl<R> ChunkedReaderIter<R> {
         }
     }
 
-    /// Returns the wrapped reader. Warning: buffered read data will be lost, which can occur if `buf_size > chunk_size`.
+    /// Returns the wrapped reader and any unyielded data. This includes both
+    /// any IOError that occured on the last read attempt and unyielded data
+    /// that was read before then.
     #[inline]
-    pub fn into_inner(self) -> R {
-        self.reader
+    pub fn into_inner(self) -> (Box<[u8]>, Option<IOError>, R) {
+        (self.buf[self.undrained_byte_count..].into_iter().copied().collect(), self.io_error_stash, self.reader)
     }
     /// Returns the chunk size which is yielded by the iterator.
     #[inline]
@@ -270,6 +272,29 @@ mod tests {
         );
         assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[9]);
         assert!(data_chunk_iter.next().is_none());
+
+        let (unyielded_data, unyielded_error, _) = data_chunk_iter.into_inner();
+        assert_eq!(
+            unyielded_data.as_ref(),
+            &[]
+        );
+        assert!(unyielded_error.is_none());
+    }
+    #[test]
+    fn chunked_read_iter_cursor_large_into_inner() {
+        let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let data_cursor = Cursor::new(data_buf);
+        let mut data_chunk_iter = ChunkedReaderIter::new(data_cursor, 4, 8, VectoredReadSelect::No);
+        assert_eq!(
+            data_chunk_iter.next().unwrap().unwrap().as_ref(),
+            &[1, 2, 3, 4]
+        );
+        let (unyielded_data, unyielded_error, _) = data_chunk_iter.into_inner();
+        assert_eq!(
+            unyielded_data.as_ref(),
+            &[5, 6, 7, 8]
+        );
+        assert!(unyielded_error.is_none());
     }
     #[test]
     fn chunked_read_iter_cursor_while() {
