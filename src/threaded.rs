@@ -51,6 +51,7 @@ impl<R: Send> ThreadedChunkedReaderIter<R> {
                             Ok(bytes) => Some(bytes),
                             Err(e) => {
                                 // Because we pause upon IOError there can be at most one
+                                // TODO: this might not work because of spurious wait wakeups
                                 assert!(io_error.is_none());
                                 io_error = Some(e);
                                 None
