@@ -9,6 +9,8 @@
 mod simple;
 mod threaded;
 
+mod vectored_read;
+
 pub(crate) mod dev_helpers;
 
 pub use simple::ChunkedReaderIter;
