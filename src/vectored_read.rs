@@ -1,6 +1,8 @@
 use std::io::{Read, IoSliceMut};
 use std::io::Result as IOResult;
 
+/// Enum describing whether to use vectored reads. The `Auto` variant is only
+/// available with the `autodetect_vectored` feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum VectoredReadSelect {
@@ -35,6 +37,7 @@ pub(crate) fn resolve_read_vectored<R: Read>(reader: &R, select: VectoredReadSel
     }
 }
 
+/// Divide the given `slice` into a vec of [`IoSliceMut`]s of `size` each.
 fn chunk_slice_for_vectored_read(slice: &mut [u8], size: usize) -> Vec<IoSliceMut> {
     assert!(size > 0);
 
