@@ -115,6 +115,8 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
                     // unpause_flag only gets set if we hit EOF earlier
                     // If we did, we don't want to retry until newly requested
                     // Otherwise we get stuck in a spinloop of reading nothing
+                    // `wait` might return spuriously but the worst that happens
+                    // is that we go around the loop and wait here again
                     wait(&unpause_flag, 0);
                     // Don't try to read again if we're supposed to stop
                     // Primarily for faster exits, but also needed to ensure
