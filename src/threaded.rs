@@ -168,10 +168,12 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
                             }
                         }
                     } else {
-                        let mut chunk_ctr = 0;
-                        while read_offset >= chunk_size {
+                        let mut bytes_yielded = 0;
+
+                        // Yield full chunks while we have them
+                        while buf[bytes_yielded..].len() >= chunk_size {
                             match tx.try_send(Ok(buf
-                                [chunk_ctr * chunk_size..(chunk_ctr + 1) * chunk_size]
+                                [bytes_yielded..bytes_yielded+chunk_size]
                                 .iter()
                                 .copied()
                                 .collect()))
@@ -179,10 +181,13 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
                                 Ok(()) => {
                                     // OK to remove chunk from the vec
                                     // Update bookkeeping but delay removal
-                                    chunk_ctr += 1;
-                                    read_offset -= chunk_size;
+                                    bytes_yielded += chunk_size;
                                 }
                                 Err(TrySendError::Full(b)) => {
+                                    // May as well drain the vec while waiting
+                                    buf.drain(..bytes_yielded);
+                                    bytes_yielded = 0;
+
                                     // If the buffer isn't full, then go around
                                     // and try to fill it up in the meantime
                                     // If it is full, then block until it isn't
@@ -191,8 +196,7 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
                                             break 'read_loop;
                                         }
                                         // Successful send -> can remove from vec
-                                        chunk_ctr += 1;
-                                        read_offset -= chunk_size;
+                                        bytes_yielded += chunk_size;
                                     }
                                 }
                                 Err(TrySendError::Disconnected(_)) => {
@@ -201,7 +205,7 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
                             }
                         }
                         // OK to remove chunks from the vec
-                        buf.drain(..chunk_ctr * chunk_size);
+                        buf.drain(..bytes_yielded);
                     }
                 }
                 reader
@@ -281,6 +285,8 @@ mod tests {
     use super::*;
 
     use std::io::Cursor;
+    use std::time::Duration;
+    use std::thread::sleep;
 
     use crate::dev_helpers::{FunnyRead, IceCubeRead, TruncatedRead};
 
@@ -300,6 +306,8 @@ mod tests {
             funny_read_iter.next().unwrap().unwrap().as_ref(),
             &[8, 9, 10, 11]
         );
+        // Sleep to make reader buf fill and exercise TrySendError::Full logic
+        sleep(Duration::from_millis(1));
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
             &[12, 13, 14, 15]
