@@ -52,6 +52,11 @@ impl<R> ChunkedReaderIter<R> {
     pub fn buf_size(&self) -> usize {
         self.buf_size
     }
+    /// Returns whether the reads will be vectored or not.
+    #[inline]
+    pub fn vectored_read_select(&self) -> VectoredReadSelect {
+        self.reader_vectored
+    }
     /// Returns a slice of the internal buffer used to buffer reads. The slice only contains valid buffered data, so it will be smaller than the value returned by [`Self::buf_size`].
     #[inline]
     pub fn buf(&self) -> &[u8] {

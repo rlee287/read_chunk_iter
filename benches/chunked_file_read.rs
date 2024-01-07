@@ -28,7 +28,7 @@ fn do_chunked_read(file: File, chunk_size: usize, multiplier: usize) {
     }
 }
 fn do_threaded_chunked_read(file: File, chunk_size: usize, multiplier: usize) {
-    let read_iter = ThreadedChunkedReaderIter::new(file, chunk_size, multiplier);
+    let read_iter = ThreadedChunkedReaderIter::new(file, chunk_size, multiplier, VectoredReadSelect::No);
     for chunk in read_iter {
         assert_eq!(chunk.unwrap().as_ref(), vec![0xf0; chunk_size].as_slice());
     }
@@ -42,7 +42,7 @@ fn do_chunked_read_hash(file: File, chunk_size: usize, multiplier: usize) {
     assert_ne!(hash_obj.finalize().as_slice(), &[0xff; 16]);
 }
 fn do_threaded_chunked_read_hash(file: File, chunk_size: usize, multiplier: usize) {
-    let read_iter = ThreadedChunkedReaderIter::new(file, chunk_size, multiplier);
+    let read_iter = ThreadedChunkedReaderIter::new(file, chunk_size, multiplier, VectoredReadSelect::No);
     let mut hash_obj = Poly1305::new_from_slice(&[0x13; 32]).unwrap();
     for chunk in read_iter {
         hash_obj.update_padded(&chunk.unwrap());

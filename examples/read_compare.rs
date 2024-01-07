@@ -37,7 +37,7 @@ fn main() -> Result<(), String> {
             }
         }
         "threaded" => {
-            let read_iter = ThreadedChunkedReaderIter::new(file, CHUNK_SIZE, 1);
+            let read_iter = ThreadedChunkedReaderIter::new(file, CHUNK_SIZE, 1, VectoredReadSelect::No);
             for chunk in read_iter {
                 hash_obj.update_padded(&chunk.unwrap());
             }
