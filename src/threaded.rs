@@ -29,16 +29,53 @@ pub struct ThreadedChunkedReaderIter<R: Send> {
     unpause_flag: Arc<AtomicU32>,
 }
 impl<R: Send> ThreadedChunkedReaderIter<R> {
-    /// Returns the wrapped reader. Warning: buffered read data will be lost, which can occur if `buf_count > 1`.
-    pub fn into_inner(mut self) -> R {
+    /// Returns the wrapped reader and any unyielded data. This includes both
+    /// any IOErrors that occured on previous read attempts and unyielded data
+    /// that was read before then. Read bytes have been coalesced, i.e. it is
+    /// guaranteed that all instances of data are either followed by an error
+    /// or occur at the end of the returned `Vec`.
+    /// 
+    /// In almost all cases, the returned Vec will contain a single boxed slice
+    /// followed by at most one I/O error, as the reading thread pauses upon
+    /// encountering an I/O error and only resumes when more data is requested.
+    /// However, a spurious thread wakeup may occur which would cause another
+    /// read to be attempted and could lead to multiple I/O errors being
+    /// enqueued.
+    pub fn into_inner(mut self) -> (Vec<IOResult<Box<[u8]>>>, R) {
         self.stop_flag.store(true, Ordering::Release);
         // Unpause and wake the thread if necessary
         if self.unpause_flag.swap(1, Ordering::AcqRel) == 0 {
             wake_all(self.unpause_flag.deref());
         }
-        // Take and drop the receiver so that thread sends error
-        drop(self.channel_receiver.take());
-        self.reader_thread_handle.take().unwrap().join().unwrap()
+        // Take the receiver, get remaining data, and drop it
+        // so that thread sends error
+        // We already signalled stop above so we won't get stuck here
+        let remaining_data = match self.channel_receiver.take() {
+            Some(recv) => {
+                let mut vec_return = Vec::new();
+                let mut vec_byte_flatten = Vec::new();
+                for item in recv {
+                    match item {
+                        Ok(boxed) => {
+                            vec_byte_flatten.extend(boxed.as_ref())
+                        },
+                        Err(e) => {
+                            if vec_byte_flatten.len() > 0 {
+                                vec_return.push(Ok(vec_byte_flatten.drain(..).collect()));
+                            }
+                            vec_return.push(Err(e));
+                        },
+                    }
+                }
+                if vec_byte_flatten.len() > 0 {
+                    vec_return.push(Ok(vec_byte_flatten.into_boxed_slice()));
+                }
+                vec_return
+            },
+            None => Vec::new(),
+        };
+        let reader = self.reader_thread_handle.take().unwrap().join().unwrap();
+        (remaining_data, reader)
     }
     /// Returns the chunk size which is yielded by the iterator.
     #[inline]
@@ -89,7 +126,14 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
                     // unpause_flag only gets set if we hit EOF earlier
                     // If we did, we don't want to retry until newly requested
                     // Otherwise we get stuck in a spinloop of reading nothing
+                    // `wait` might return spuriously but the worst that happens
+                    // is that we go around the loop and wait here again
+                    // TODO: is it worth it to do a loop like with condvars?
                     wait(&unpause_flag, 0);
+                    // Don't try to read again if we're supposed to stop
+                    if stop_flag.load(Ordering::Acquire) {
+                        break 'read_loop;
+                    }
 
                     let mut read_offset = buf.len();
                     // Temporarily resize Vec to try to fill it
@@ -113,6 +157,7 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
                                 // Shrink Vec back to how much was actually read
                                 buf.truncate(read_offset);
                                 // Yield currently read data before yielding Err
+                                // We are in loop so read_offset < chunk_size
                                 if read_offset > 0 {
                                     let boxed_data: Box<[u8]> = buf.drain(..).collect();
                                     if tx.send(Ok(boxed_data)).is_err() {
@@ -285,8 +330,11 @@ mod tests {
     use super::*;
 
     use std::io::Cursor;
+
     use std::time::Duration;
     use std::thread::sleep;
+
+    use std::convert::TryFrom;
 
     use crate::dev_helpers::{FunnyRead, IceCubeRead, TruncatedRead};
 
@@ -357,7 +405,7 @@ mod tests {
     #[test]
     fn chunked_read_iter_truncatedread_large() {
         let funny_read = TruncatedRead::default();
-        let mut funny_read_iter = ThreadedChunkedReaderIter::new(funny_read, 11, 22, VectoredReadSelect::No);
+        let mut funny_read_iter = ThreadedChunkedReaderIter::new(funny_read, 11, 2, VectoredReadSelect::No);
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
             b"reimureimu"
@@ -397,6 +445,30 @@ mod tests {
         );
         assert_eq!(data_chunk_iter.next().unwrap().unwrap().as_ref(), &[9]);
         assert!(data_chunk_iter.next().is_none());
+
+        let (unyielded_data, _) = data_chunk_iter.into_inner();
+        assert!(unyielded_data.is_empty());
+    }
+    #[test]
+    fn chunked_read_iter_cursor_large_into_inner() {
+        let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let data_cursor = Cursor::new(data_buf);
+        let mut data_chunk_iter = ThreadedChunkedReaderIter::new(data_cursor, 4, 2, VectoredReadSelect::No);
+        assert_eq!(
+            data_chunk_iter.next().unwrap().unwrap().as_ref(),
+            &[1, 2, 3, 4]
+        );
+        let (unyielded_data, mut cursor) = data_chunk_iter.into_inner();
+        // We may not have read to the end so check how much was actually read
+        let cursor_pos = usize::try_from(cursor.stream_position().unwrap() - 4).unwrap();
+        let unyielded_data_bytes: Vec<_> = unyielded_data.into_iter()
+            .map(|x| x.unwrap())
+            .flat_map(|x| Vec::from(x))
+            .collect();
+        assert_eq!(
+            unyielded_data_bytes,
+            &[5, 6, 7, 8, 9][..cursor_pos]
+        );
     }
     #[test]
     fn chunked_read_iter_cursor_while() {
