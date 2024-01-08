@@ -60,7 +60,7 @@ impl<R> ChunkedReaderIter<R> {
     /// Returns a slice of the internal buffer used to buffer reads. The slice only contains valid buffered data, so it will be smaller than the value returned by [`Self::buf_size`].
     #[inline]
     pub fn buf(&self) -> &[u8] {
-        self.buf.as_ref()
+        &self.buf[self.undrained_byte_count..]
     }
 }
 impl<R: Seek> ChunkedReaderIter<R> {
@@ -109,6 +109,7 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
                     // Shrink Vec back to how much was actually read
                     self.buf.truncate(read_offset);
                     // Yield currently read data before yielding Err
+                    // We are in loop so read_offset < chunk_size
                     if read_offset > 0 {
                         assert!(self.io_error_stash.is_none());
                         self.io_error_stash = Some(e);
