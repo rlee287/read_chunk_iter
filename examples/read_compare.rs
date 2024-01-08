@@ -7,7 +7,7 @@ use itertools::Itertools;
 
 use poly1305::universal_hash::{KeyInit, UniversalHash};
 use poly1305::Poly1305;
-use read_chunk_iter::{VectoredReadSelect, ChunkedReaderIter, ThreadedChunkedReaderIter};
+use read_chunk_iter::{ChunkedReaderIter, ThreadedChunkedReaderIter, VectoredReadSelect};
 
 // This is the default buffer size for a BufReader
 const CHUNK_SIZE: usize = 8192;
@@ -31,13 +31,15 @@ fn main() -> Result<(), String> {
             }
         }
         "simple" => {
-            let read_iter = ChunkedReaderIter::new(file, CHUNK_SIZE, CHUNK_SIZE, VectoredReadSelect::No);
+            let read_iter =
+                ChunkedReaderIter::new(file, CHUNK_SIZE, CHUNK_SIZE, VectoredReadSelect::No);
             for chunk in read_iter {
                 hash_obj.update_padded(&chunk.unwrap());
             }
         }
         "threaded" => {
-            let read_iter = ThreadedChunkedReaderIter::new(file, CHUNK_SIZE, 1, VectoredReadSelect::No);
+            let read_iter =
+                ThreadedChunkedReaderIter::new(file, CHUNK_SIZE, 1, VectoredReadSelect::No);
             for chunk in read_iter {
                 hash_obj.update_padded(&chunk.unwrap());
             }

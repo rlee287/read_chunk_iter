@@ -2,7 +2,7 @@ use std::io::Error as IOError;
 use std::io::Result as IOResult;
 use std::io::{ErrorKind, Read, Seek};
 
-use crate::vectored_read::{VectoredReadSelect, resolve_read_vectored, read_vectored_into_buf};
+use crate::vectored_read::{read_vectored_into_buf, resolve_read_vectored, VectoredReadSelect};
 
 /// An iterator adapter for readers that yields chunks of bytes in a `Box<[u8]>`.
 ///
@@ -22,7 +22,12 @@ impl<R> ChunkedReaderIter<R> {
     ///
     /// # Panics
     /// Panics if `buf_size` is smaller than `chunk_size` or if either are 0.
-    pub fn new(reader: R, chunk_size: usize, buf_size: usize, reader_vectored: VectoredReadSelect) -> Self {
+    pub fn new(
+        reader: R,
+        chunk_size: usize,
+        buf_size: usize,
+        reader_vectored: VectoredReadSelect,
+    ) -> Self {
         assert!(chunk_size > 0);
         assert!(buf_size > 0);
         assert!(buf_size >= chunk_size);
@@ -42,7 +47,14 @@ impl<R> ChunkedReaderIter<R> {
     /// that was read before then.
     #[inline]
     pub fn into_inner(self) -> (Box<[u8]>, Option<IOError>, R) {
-        (self.buf[self.undrained_byte_count..].into_iter().copied().collect(), self.io_error_stash, self.reader)
+        (
+            self.buf[self.undrained_byte_count..]
+                .into_iter()
+                .copied()
+                .collect(),
+            self.io_error_stash,
+            self.reader,
+        )
     }
     /// Returns the chunk size which is yielded by the iterator.
     #[inline]
@@ -68,7 +80,12 @@ impl<R> ChunkedReaderIter<R> {
 impl<R: Seek> ChunkedReaderIter<R> {
     /// Constructs a new [`ChunkedReaderIter`] that rewinds the reader to ensure that all data is yielded by the iterator.
     /// See [`ChunkedReaderIter::new`] for descriptions of the other parameters.
-    pub fn new_with_rewind(mut reader: R, chunk_size: usize, buf_size: usize, reader_vectored: VectoredReadSelect) -> Self {
+    pub fn new_with_rewind(
+        mut reader: R,
+        chunk_size: usize,
+        buf_size: usize,
+        reader_vectored: VectoredReadSelect,
+    ) -> Self {
         reader.rewind().unwrap();
         Self::new(reader, chunk_size, buf_size, reader_vectored)
     }
@@ -96,8 +113,12 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
         // Try to fill entire buf, but we're good if we have a whole chunk
         while read_offset < self.chunk_size {
             let reader_result = match resolve_read_vectored(&self.reader, self.reader_vectored) {
-                true => read_vectored_into_buf(&mut self.reader, &mut self.buf[read_offset..], self.chunk_size),
-                false => self.reader.read(&mut self.buf[read_offset..])
+                true => read_vectored_into_buf(
+                    &mut self.reader,
+                    &mut self.buf[read_offset..],
+                    self.chunk_size,
+                ),
+                false => self.reader.read(&mut self.buf[read_offset..]),
             };
             match reader_result {
                 Ok(0) => {
@@ -233,7 +254,8 @@ mod tests {
     #[test]
     fn chunked_read_iter_truncatedread_large() {
         let funny_read = TruncatedRead::default();
-        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, 11, 22, VectoredReadSelect::No);
+        let mut funny_read_iter =
+            ChunkedReaderIter::new(funny_read, 11, 22, VectoredReadSelect::No);
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
             b"reimureimu"
@@ -275,10 +297,7 @@ mod tests {
         assert!(data_chunk_iter.next().is_none());
 
         let (unyielded_data, unyielded_error, _) = data_chunk_iter.into_inner();
-        assert_eq!(
-            unyielded_data.as_ref(),
-            &[]
-        );
+        assert_eq!(unyielded_data.as_ref(), &[]);
         assert!(unyielded_error.is_none());
     }
     #[test]
@@ -291,10 +310,7 @@ mod tests {
             &[1, 2, 3, 4]
         );
         let (unyielded_data, unyielded_error, _) = data_chunk_iter.into_inner();
-        assert_eq!(
-            unyielded_data.as_ref(),
-            &[5, 6, 7, 8]
-        );
+        assert_eq!(unyielded_data.as_ref(), &[5, 6, 7, 8]);
         assert!(unyielded_error.is_none());
     }
     #[test]
@@ -302,7 +318,8 @@ mod tests {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
 
-        let data_chunks: Vec<_> = ChunkedReaderIter::new(data_cursor, 4, 8, VectoredReadSelect::No).collect();
+        let data_chunks: Vec<_> =
+            ChunkedReaderIter::new(data_cursor, 4, 8, VectoredReadSelect::No).collect();
         let data_chunks_as_slice: Vec<&[u8]> = data_chunks
             .iter()
             .map(|r| r.as_ref().unwrap().as_ref())
