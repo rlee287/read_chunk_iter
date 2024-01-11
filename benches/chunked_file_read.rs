@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 use itertools::Itertools;
@@ -21,29 +23,29 @@ fn do_std_iter_bufread(file: File, chunk_size: usize) {
         );
     }
 }
-fn do_chunked_read(file: File, chunk_size: usize, multiplier: usize) {
+fn do_chunked_read(file: File, chunk_size: NonZeroUsize, multiplier: usize) {
     let read_iter = ChunkedReaderIter::new(
         file,
         chunk_size,
-        chunk_size * multiplier,
+        chunk_size.checked_mul(NonZeroUsize::new(multiplier).unwrap()).unwrap(),
         VectoredReadSelect::No,
     );
     for chunk in read_iter {
-        assert_eq!(chunk.unwrap().as_ref(), vec![0xf0; chunk_size].as_slice());
+        assert_eq!(chunk.unwrap().as_ref(), vec![0xf0; chunk_size.into()].as_slice());
     }
 }
-fn do_threaded_chunked_read(file: File, chunk_size: usize, multiplier: usize) {
+fn do_threaded_chunked_read(file: File, chunk_size: NonZeroUsize, multiplier: usize) {
     let read_iter =
         ThreadedChunkedReaderIter::new(file, chunk_size, multiplier, VectoredReadSelect::No);
     for chunk in read_iter {
-        assert_eq!(chunk.unwrap().as_ref(), vec![0xf0; chunk_size].as_slice());
+        assert_eq!(chunk.unwrap().as_ref(), vec![0xf0; chunk_size.into()].as_slice());
     }
 }
-fn do_chunked_read_hash(file: File, chunk_size: usize, multiplier: usize) {
+fn do_chunked_read_hash(file: File, chunk_size: NonZeroUsize, multiplier: usize) {
     let read_iter = ChunkedReaderIter::new(
         file,
         chunk_size,
-        chunk_size * multiplier,
+        chunk_size.checked_mul(NonZeroUsize::new(multiplier).unwrap()).unwrap(),
         VectoredReadSelect::No,
     );
     let mut hash_obj = Poly1305::new_from_slice(&[0x13; 32]).unwrap();
@@ -52,7 +54,7 @@ fn do_chunked_read_hash(file: File, chunk_size: usize, multiplier: usize) {
     }
     assert_ne!(hash_obj.finalize().as_slice(), &[0xff; 16]);
 }
-fn do_threaded_chunked_read_hash(file: File, chunk_size: usize, multiplier: usize) {
+fn do_threaded_chunked_read_hash(file: File, chunk_size: NonZeroUsize, multiplier: usize) {
     let read_iter =
         ThreadedChunkedReaderIter::new(file, chunk_size, multiplier, VectoredReadSelect::No);
     let mut hash_obj = Poly1305::new_from_slice(&[0x13; 32]).unwrap();
@@ -80,7 +82,7 @@ fn criterion_benchmark_multiplier(c: &mut Criterion) {
             |b, &mult| {
                 b.iter_batched(
                     || File::open(temp_file_path).unwrap(),
-                    |file| do_chunked_read(file, black_box(8192), mult),
+                    |file| do_chunked_read(file, black_box(NonZeroUsize::new(8192).unwrap()), mult),
                     criterion::BatchSize::PerIteration,
                 );
             },
@@ -91,7 +93,7 @@ fn criterion_benchmark_multiplier(c: &mut Criterion) {
             |b, &mult| {
                 b.iter_batched(
                     || File::open(temp_file_path).unwrap(),
-                    |file| do_threaded_chunked_read(file, black_box(8192), mult),
+                    |file| do_threaded_chunked_read(file, black_box(NonZeroUsize::new(8192).unwrap()), mult),
                     criterion::BatchSize::PerIteration,
                 );
             },
@@ -117,7 +119,7 @@ fn criterion_benchmark_multiplier_hash(c: &mut Criterion) {
             |b, &mult| {
                 b.iter_batched(
                     || File::open(temp_file_path).unwrap(),
-                    |file| do_chunked_read_hash(file, black_box(8192), mult),
+                    |file| do_chunked_read_hash(file, black_box(NonZeroUsize::new(8192).unwrap()), mult),
                     criterion::BatchSize::PerIteration,
                 );
             },
@@ -128,7 +130,7 @@ fn criterion_benchmark_multiplier_hash(c: &mut Criterion) {
             |b, &mult| {
                 b.iter_batched(
                     || File::open(temp_file_path).unwrap(),
-                    |file| do_threaded_chunked_read_hash(file, black_box(8192), mult),
+                    |file| do_threaded_chunked_read_hash(file, black_box(NonZeroUsize::new(8192).unwrap()), mult),
                     criterion::BatchSize::PerIteration,
                 );
             },
@@ -154,7 +156,7 @@ fn criterion_benchmark_filesize(c: &mut Criterion) {
             |b, &_size| {
                 b.iter_batched(
                     || File::open(temp_file_path).unwrap(),
-                    |file| do_chunked_read(file, black_box(16384), black_box(4)),
+                    |file| do_chunked_read(file, black_box(NonZeroUsize::new(16384)).unwrap(), black_box(4)),
                     criterion::BatchSize::PerIteration,
                 );
             },
@@ -165,7 +167,7 @@ fn criterion_benchmark_filesize(c: &mut Criterion) {
             |b, &_size| {
                 b.iter_batched(
                     || File::open(temp_file_path).unwrap(),
-                    |file| do_threaded_chunked_read(file, black_box(16384), black_box(4)),
+                    |file| do_threaded_chunked_read(file, black_box(NonZeroUsize::new(16384).unwrap()), black_box(4)),
                     criterion::BatchSize::PerIteration,
                 );
             },
@@ -177,7 +179,7 @@ fn criterion_benchmark_filesize(c: &mut Criterion) {
 fn criterion_benchmark_chunksize(c: &mut Criterion) {
     let mut group = c.benchmark_group("(verify, filesize:2MiB, chunk:?, multiplier:4)");
 
-    for chunk_size in [1024 * 2, 1024 * 4, 1024 * 8, 1024 * 16, 1024 * 32] {
+    for chunk_size in [1024 * 2, 1024 * 4, 1024 * 8, 1024 * 16, 1024 * 32].map(|x| NonZeroUsize::new(x).unwrap()) {
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(&[0xf0; 1024 * 1024 * 2]).unwrap();
         temp_file.flush().unwrap();
@@ -191,7 +193,7 @@ fn criterion_benchmark_chunksize(c: &mut Criterion) {
             |b, &size| {
                 b.iter_batched(
                     || File::open(temp_file_path).unwrap(),
-                    |file| do_std_iter_bufread(file, size * 4),
+                    |file| do_std_iter_bufread(file, usize::from(size) * 4),
                     criterion::BatchSize::PerIteration,
                 );
             },

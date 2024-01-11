@@ -5,12 +5,15 @@ use std::io::{BufReader, Read};
 
 use itertools::Itertools;
 
+use std::num::NonZeroUsize;
+
 use poly1305::universal_hash::{KeyInit, UniversalHash};
 use poly1305::Poly1305;
 use read_chunk_iter::{ChunkedReaderIter, ThreadedChunkedReaderIter, VectoredReadSelect};
 
 // This is the default buffer size for a BufReader
-const CHUNK_SIZE: usize = 8192;
+// Safety: the constant is not zero
+const CHUNK_SIZE: NonZeroUsize = unsafe{NonZeroUsize::new_unchecked(8192)};
 
 fn main() -> Result<(), String> {
     let args: Vec<_> = args().collect();
@@ -26,7 +29,7 @@ fn main() -> Result<(), String> {
     match args[1].as_str() {
         "bufread" => {
             let bufread = BufReader::with_capacity(8192, file);
-            for chunk in &bufread.bytes().chunks(CHUNK_SIZE) {
+            for chunk in &bufread.bytes().chunks(CHUNK_SIZE.into()) {
                 hash_obj.update_padded(&chunk.map(|x| x.unwrap()).collect::<Vec<_>>());
             }
         }

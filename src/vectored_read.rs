@@ -1,6 +1,8 @@
 use std::io::Result as IOResult;
 use std::io::{IoSliceMut, Read};
 
+use std::num::NonZeroUsize;
+
 /// Enum describing whether to use vectored reads. The `Auto` variant is only
 /// available with the `autodetect_vectored` feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,8 +40,8 @@ pub(crate) fn resolve_read_vectored<R: Read>(reader: &R, select: VectoredReadSel
 }
 
 /// Divide the given `slice` into a vec of [`IoSliceMut`]s of `size` each.
-fn chunk_slice_for_vectored_read(slice: &mut [u8], size: usize) -> Vec<IoSliceMut> {
-    assert!(size > 0);
+fn chunk_slice_for_vectored_read(slice: &mut [u8], size: NonZeroUsize) -> Vec<IoSliceMut> {
+    let size = size.into();
 
     let mut vec_slices = Vec::with_capacity(slice.len().div_ceil(size));
     let mut cdr = slice;
@@ -57,7 +59,7 @@ fn chunk_slice_for_vectored_read(slice: &mut [u8], size: usize) -> Vec<IoSliceMu
 pub(crate) fn read_vectored_into_buf<R: Read>(
     reader: &mut R,
     slice: &mut [u8],
-    size: usize,
+    size: NonZeroUsize,
 ) -> IOResult<usize> {
     let mut vec_slices = chunk_slice_for_vectored_read(slice, size);
     reader.read_vectored(&mut vec_slices)
