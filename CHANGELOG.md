@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Threaded `ThreadedChunkedReadIter` for asynchronous reading
 - Ability to select vectored reading
+- Examples and benchmarks for comparing performance
 
 ### Fixed
 
@@ -19,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Read errors are now yielded with byte-level precision
+- `usize` parameters that were required to be nonzero are now `NonZeroUsize`s
 
 ### Removed
 
