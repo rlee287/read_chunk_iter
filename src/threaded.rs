@@ -28,6 +28,8 @@ pub struct ThreadedChunkedReaderIter<R: Send> {
     channel_receiver: Option<Receiver<IOResult<Box<[u8]>>>>,
     stop_flag: Arc<AtomicBool>,
     // Semantically this is a bool but atomic_wait only supports U32
+    // Flag is cleared only in the read thread and set only in the main thread
+    // so there is no ABA problem with waiting on a value
     unpause_flag: Arc<AtomicU32>,
 }
 impl<R: Send> ThreadedChunkedReaderIter<R> {
