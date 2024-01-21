@@ -49,7 +49,7 @@ impl<R> ChunkedReaderIter<R> {
     pub fn into_inner(self) -> (Box<[u8]>, Option<IOError>, R) {
         (
             self.buf[self.undrained_byte_count..]
-                .into_iter()
+                .iter()
                 .copied()
                 .collect(),
             self.io_error_stash,

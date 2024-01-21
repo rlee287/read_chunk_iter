@@ -62,14 +62,14 @@ impl<R: Send> ThreadedChunkedReaderIter<R> {
                     match item {
                         Ok(boxed) => vec_byte_flatten.extend(boxed.as_ref()),
                         Err(e) => {
-                            if vec_byte_flatten.len() > 0 {
+                            if !vec_byte_flatten.is_empty() {
                                 vec_return.push(Ok(vec_byte_flatten.drain(..).collect()));
                             }
                             vec_return.push(Err(e));
                         }
                     }
                 }
-                if vec_byte_flatten.len() > 0 {
+                if !vec_byte_flatten.is_empty() {
                     vec_return.push(Ok(vec_byte_flatten.into_boxed_slice()));
                 }
                 vec_return
@@ -482,7 +482,7 @@ mod tests {
         let unyielded_data_bytes: Vec<_> = unyielded_data
             .into_iter()
             .map(|x| x.unwrap())
-            .flat_map(|x| Vec::from(x))
+            .flat_map(Vec::from)
             .collect();
         assert_eq!(unyielded_data_bytes, &[5, 6, 7, 8, 9][..cursor_pos]);
     }

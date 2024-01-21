@@ -51,7 +51,7 @@ fn chunk_slice_for_vectored_read(slice: &mut [u8], size: NonZeroUsize) -> Vec<Io
         vec_slices.push(IoSliceMut::new(car));
         cdr = cdr_new;
     }
-    if cdr.len() > 0 {
+    if !cdr.is_empty() {
         vec_slices.push(IoSliceMut::new(cdr));
     }
     vec_slices

@@ -14,7 +14,7 @@ mod funky {
     impl Read for FunnyRead {
         fn read(&mut self, buf: &mut [u8]) -> IOResult<usize> {
             let mut actual_count = 0;
-            for byte in buf.into_iter().take(3) {
+            for byte in buf.iter_mut().take(3) {
                 actual_count += 1;
                 *byte = (self.counter % 256).try_into().unwrap();
                 self.counter += 1;
@@ -67,7 +67,7 @@ mod funky {
         fn read(&mut self, buf: &mut [u8]) -> IOResult<usize> {
             let retval = match self.state {
                 0..=1 => {
-                    if self.data_vec.len() == 0 {
+                    if self.data_vec.is_empty() {
                         self.data_vec = Vec::from(b"reimu");
                     }
                     let copy_section: Vec<_> = self
