@@ -17,7 +17,7 @@ This crate offers two alternatives:
 
 Whether to use `ChunkedReaderIter` or `ThreadedChunkedReaderIter` depends on whether the saved time of asynchronous reads while doing other computations outweighs the overhead of threading. *Benchmark your particular use case before assuming that one is necessarily better than the other.*
 
-# Features
+## Features
 - autodetect_vectored: Enable automatic detection of whether vectored reads offer speedups, and take advantage of them when they offer speedups. This feature requires nightly, but manual selection of vectored reads is still possible without it.
 
 ## Planned features
