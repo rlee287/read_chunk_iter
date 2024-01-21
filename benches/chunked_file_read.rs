@@ -64,6 +64,48 @@ fn do_threaded_chunked_read_hash(file: File, chunk_size: NonZeroUsize, multiplie
     assert_ne!(hash_obj.finalize().as_slice(), &[0xff; 16]);
 }
 
+fn criterion_benchmark_bufread_vs_simple(c: &mut Criterion) {
+    let mut temp_file = NamedTempFile::new().unwrap();
+    temp_file.write_all(&[0xf0; 512 * 1024]).unwrap();
+    temp_file.flush().unwrap();
+    temp_file.rewind().unwrap();
+
+    let temp_file_path = temp_file.path();
+
+    let mut group = c.benchmark_group("(verify, filesize:512KiB, chunk:8192, multiplier:1)");
+
+    group.bench_function(
+        BenchmarkId::from_parameter("iter_bufread"),
+        |b| {
+            b.iter_batched(
+                || File::open(temp_file_path).unwrap(),
+                |file| do_std_iter_bufread(file, black_box(8192)),
+                criterion::BatchSize::PerIteration,
+            );
+        },
+    );
+    group.bench_function(
+        BenchmarkId::from_parameter("simple"),
+        |b| {
+            b.iter_batched(
+                || File::open(temp_file_path).unwrap(),
+                |file| do_chunked_read(file, black_box(NonZeroUsize::new(8192).unwrap()), 1),
+                criterion::BatchSize::PerIteration,
+            );
+        },
+    );
+    group.bench_function(
+        BenchmarkId::from_parameter("threaded"),
+        |b| {
+            b.iter_batched(
+                || File::open(temp_file_path).unwrap(),
+                |file| do_threaded_chunked_read(file, NonZeroUsize::new(8192).unwrap(), 1),
+                criterion::BatchSize::PerIteration,
+            );
+        },
+    );
+    group.finish();
+}
 fn criterion_benchmark_multiplier(c: &mut Criterion) {
     let mut temp_file = NamedTempFile::new().unwrap();
     temp_file.write_all(&[0xf0; 1024 * 1024 * 2]).unwrap();
@@ -188,17 +230,6 @@ fn criterion_benchmark_chunksize(c: &mut Criterion) {
         let temp_file_path = temp_file.path();
 
         group.bench_with_input(
-            BenchmarkId::new("iter_bufread", chunk_size),
-            &chunk_size,
-            |b, &size| {
-                b.iter_batched(
-                    || File::open(temp_file_path).unwrap(),
-                    |file| do_std_iter_bufread(file, usize::from(size) * 4),
-                    criterion::BatchSize::PerIteration,
-                );
-            },
-        );
-        group.bench_with_input(
             BenchmarkId::new("simple", chunk_size),
             &chunk_size,
             |b, &size| {
@@ -226,6 +257,7 @@ fn criterion_benchmark_chunksize(c: &mut Criterion) {
 
 criterion_group!(
     benches,
+    criterion_benchmark_bufread_vs_simple,
     criterion_benchmark_multiplier,
     criterion_benchmark_multiplier_hash,
     criterion_benchmark_filesize,
