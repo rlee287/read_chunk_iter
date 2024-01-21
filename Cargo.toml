@@ -1,6 +1,6 @@
 [package]
 name = "read_chunk_iter"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2018"
 license = "MIT"
 description = "Iterator adapters over a reader that yield fixed-size chunks at a time."
