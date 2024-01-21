@@ -3,6 +3,8 @@ use std::io::{IoSliceMut, Read};
 
 use std::num::NonZeroUsize;
 
+// Once is_read_vectored is stabilized this enum won't need to be non_exhaustive
+
 /// Enum describing whether to use vectored reads. The `Auto` variant is only
 /// available with the `autodetect_vectored` feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,6 +12,7 @@ use std::num::NonZeroUsize;
 pub enum VectoredReadSelect {
     Yes,
     #[cfg(feature = "autodetect_vectored")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "autodetect_vectored")))]
     Auto,
     No,
 }
