@@ -13,7 +13,7 @@ use read_chunk_iter::{ChunkedReaderIter, ThreadedChunkedReaderIter, VectoredRead
 
 // This is the default buffer size for a BufReader
 // Safety: the constant is not zero
-const CHUNK_SIZE: NonZeroUsize = unsafe{NonZeroUsize::new_unchecked(8192)};
+const CHUNK_SIZE: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(8192) };
 
 fn main() -> Result<(), String> {
     let args: Vec<_> = args().collect();

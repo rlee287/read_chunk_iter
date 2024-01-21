@@ -103,7 +103,7 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
     /// Instantiates a new [`ThreadedChunkedReaderIter`] that asynchronously tries to read up to `chunk_size*buf_count` bytes at a time and that yields `chunk_size` bytes as an iterator until reaching EOF.
     /// The use of a thread allows I/O reads to occur in the background while the program performs processing on the data.
     /// (If `buf_count` is zero, then `chunk_size` bytes are read at a time, and the thread waits for the chunk to be yielded before reading again.)
-    /// 
+    ///
     /// For readers that implement `Seek`, [`Self::new_with_rewind`] rewinds the given reader.
     pub fn new(
         mut reader: R,
@@ -225,7 +225,8 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
 
                         // Yield full chunks while we have them
                         while buf[bytes_yielded..].len() >= chunk_size.into() {
-                            match tx.try_send(Ok(buf[bytes_yielded..bytes_yielded + usize::from(chunk_size)]
+                            match tx.try_send(Ok(buf
+                                [bytes_yielded..bytes_yielded + usize::from(chunk_size)]
                                 .iter()
                                 .copied()
                                 .collect()))
@@ -353,8 +354,12 @@ mod tests {
     #[test]
     fn chunked_read_iter_funnyread() {
         let funny_read = FunnyRead::default();
-        let mut funny_read_iter =
-            ThreadedChunkedReaderIter::new(funny_read, NonZeroUsize::new(4).unwrap(), 2, VectoredReadSelect::Yes);
+        let mut funny_read_iter = ThreadedChunkedReaderIter::new(
+            funny_read,
+            NonZeroUsize::new(4).unwrap(),
+            2,
+            VectoredReadSelect::Yes,
+        );
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
             &[0, 1, 2, 3]
@@ -385,8 +390,12 @@ mod tests {
     #[test]
     fn chunked_read_iter_icecuberead() {
         let funny_read = IceCubeRead::default();
-        let mut funny_read_iter =
-            ThreadedChunkedReaderIter::new(funny_read, NonZeroUsize::new(2).unwrap(), 5, VectoredReadSelect::No);
+        let mut funny_read_iter = ThreadedChunkedReaderIter::new(
+            funny_read,
+            NonZeroUsize::new(2).unwrap(),
+            5,
+            VectoredReadSelect::No,
+        );
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[9, 99]);
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
@@ -406,8 +415,12 @@ mod tests {
     #[test]
     fn chunked_read_iter_truncatedread() {
         let funny_read = TruncatedRead::default();
-        let mut funny_read_iter =
-            ThreadedChunkedReaderIter::new(funny_read, NonZeroUsize::new(3).unwrap(), 1, VectoredReadSelect::No);
+        let mut funny_read_iter = ThreadedChunkedReaderIter::new(
+            funny_read,
+            NonZeroUsize::new(3).unwrap(),
+            1,
+            VectoredReadSelect::No,
+        );
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"mu");
         assert_eq!(
@@ -420,8 +433,12 @@ mod tests {
     #[test]
     fn chunked_read_iter_truncatedread_large() {
         let funny_read = TruncatedRead::default();
-        let mut funny_read_iter =
-            ThreadedChunkedReaderIter::new(funny_read, NonZeroUsize::new(11).unwrap(), 2, VectoredReadSelect::No);
+        let mut funny_read_iter = ThreadedChunkedReaderIter::new(
+            funny_read,
+            NonZeroUsize::new(11).unwrap(),
+            2,
+            VectoredReadSelect::No,
+        );
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
             b"reimureimu"
@@ -450,8 +467,12 @@ mod tests {
     fn chunked_read_iter_cursor_large() {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter =
-            ThreadedChunkedReaderIter::new(data_cursor, NonZeroUsize::new(4).unwrap(), 2, VectoredReadSelect::No);
+        let mut data_chunk_iter = ThreadedChunkedReaderIter::new(
+            data_cursor,
+            NonZeroUsize::new(4).unwrap(),
+            2,
+            VectoredReadSelect::No,
+        );
         assert_eq!(
             data_chunk_iter.next().unwrap().unwrap().as_ref(),
             &[1, 2, 3, 4]
@@ -470,8 +491,12 @@ mod tests {
     fn chunked_read_iter_cursor_large_into_inner() {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter =
-            ThreadedChunkedReaderIter::new(data_cursor, NonZeroUsize::new(4).unwrap(), 2, VectoredReadSelect::No);
+        let mut data_chunk_iter = ThreadedChunkedReaderIter::new(
+            data_cursor,
+            NonZeroUsize::new(4).unwrap(),
+            2,
+            VectoredReadSelect::No,
+        );
         assert_eq!(
             data_chunk_iter.next().unwrap().unwrap().as_ref(),
             &[1, 2, 3, 4]
@@ -491,8 +516,13 @@ mod tests {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
 
-        let data_chunks: Vec<_> =
-            ThreadedChunkedReaderIter::new(data_cursor, NonZeroUsize::new(4).unwrap(), 2, VectoredReadSelect::No).collect();
+        let data_chunks: Vec<_> = ThreadedChunkedReaderIter::new(
+            data_cursor,
+            NonZeroUsize::new(4).unwrap(),
+            2,
+            VectoredReadSelect::No,
+        )
+        .collect();
         let data_chunks_as_slice: Vec<&[u8]> = data_chunks
             .iter()
             .map(|r| r.as_ref().unwrap().as_ref())
@@ -504,8 +534,12 @@ mod tests {
     fn chunked_read_iter_cursor_large_buf_eq_chunk() {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter =
-            ThreadedChunkedReaderIter::new(data_cursor, NonZeroUsize::new(4).unwrap(), 1, VectoredReadSelect::No);
+        let mut data_chunk_iter = ThreadedChunkedReaderIter::new(
+            data_cursor,
+            NonZeroUsize::new(4).unwrap(),
+            1,
+            VectoredReadSelect::No,
+        );
         assert_eq!(
             data_chunk_iter.next().unwrap().unwrap().as_ref(),
             &[1, 2, 3, 4]
@@ -521,8 +555,12 @@ mod tests {
     fn chunked_read_iter_cursor_large_buf_zero_chunk() {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter =
-            ThreadedChunkedReaderIter::new(data_cursor, NonZeroUsize::new(4).unwrap(), 0, VectoredReadSelect::No);
+        let mut data_chunk_iter = ThreadedChunkedReaderIter::new(
+            data_cursor,
+            NonZeroUsize::new(4).unwrap(),
+            0,
+            VectoredReadSelect::No,
+        );
         assert_eq!(
             data_chunk_iter.next().unwrap().unwrap().as_ref(),
             &[1, 2, 3, 4]

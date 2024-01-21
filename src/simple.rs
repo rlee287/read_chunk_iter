@@ -167,8 +167,8 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
             self.undrained_byte_count = 0;
             Some(Ok(boxed_data))
         } else {
-            let ret_buf = self.buf
-                [self.undrained_byte_count..self.undrained_byte_count + usize::from(self.chunk_size)]
+            let ret_buf = self.buf[self.undrained_byte_count
+                ..self.undrained_byte_count + usize::from(self.chunk_size)]
                 .iter()
                 .copied()
                 .collect();
@@ -194,7 +194,12 @@ mod tests {
     #[test]
     fn chunked_read_iter_funnyread() {
         let funny_read = FunnyRead::default();
-        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, NonZeroUsize::new(4).unwrap(), NonZeroUsize::new(5).unwrap(), VectoredReadSelect::Yes);
+        let mut funny_read_iter = ChunkedReaderIter::new(
+            funny_read,
+            NonZeroUsize::new(4).unwrap(),
+            NonZeroUsize::new(5).unwrap(),
+            VectoredReadSelect::Yes,
+        );
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
             &[0, 1, 2, 3]
@@ -223,7 +228,12 @@ mod tests {
     #[test]
     fn chunked_read_iter_icecuberead() {
         let funny_read = IceCubeRead::default();
-        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, NonZeroUsize::new(2).unwrap(), NonZeroUsize::new(5).unwrap(), VectoredReadSelect::No);
+        let mut funny_read_iter = ChunkedReaderIter::new(
+            funny_read,
+            NonZeroUsize::new(2).unwrap(),
+            NonZeroUsize::new(5).unwrap(),
+            VectoredReadSelect::No,
+        );
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), &[9, 99]);
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
@@ -243,7 +253,12 @@ mod tests {
     #[test]
     fn chunked_read_iter_truncatedread() {
         let funny_read = TruncatedRead::default();
-        let mut funny_read_iter = ChunkedReaderIter::new(funny_read, NonZeroUsize::new(3).unwrap(), NonZeroUsize::new(3).unwrap(), VectoredReadSelect::No);
+        let mut funny_read_iter = ChunkedReaderIter::new(
+            funny_read,
+            NonZeroUsize::new(3).unwrap(),
+            NonZeroUsize::new(3).unwrap(),
+            VectoredReadSelect::No,
+        );
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"rei");
         assert_eq!(funny_read_iter.next().unwrap().unwrap().as_ref(), b"mu");
         assert_eq!(
@@ -256,8 +271,12 @@ mod tests {
     #[test]
     fn chunked_read_iter_truncatedread_large() {
         let funny_read = TruncatedRead::default();
-        let mut funny_read_iter =
-            ChunkedReaderIter::new(funny_read, NonZeroUsize::new(11).unwrap(), NonZeroUsize::new(22).unwrap(), VectoredReadSelect::No);
+        let mut funny_read_iter = ChunkedReaderIter::new(
+            funny_read,
+            NonZeroUsize::new(11).unwrap(),
+            NonZeroUsize::new(22).unwrap(),
+            VectoredReadSelect::No,
+        );
         assert_eq!(
             funny_read_iter.next().unwrap().unwrap().as_ref(),
             b"reimureimu"
@@ -286,7 +305,12 @@ mod tests {
     fn chunked_read_iter_cursor_large() {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter = ChunkedReaderIter::new(data_cursor, NonZeroUsize::new(4).unwrap(), NonZeroUsize::new(8).unwrap(), VectoredReadSelect::No);
+        let mut data_chunk_iter = ChunkedReaderIter::new(
+            data_cursor,
+            NonZeroUsize::new(4).unwrap(),
+            NonZeroUsize::new(8).unwrap(),
+            VectoredReadSelect::No,
+        );
         assert_eq!(
             data_chunk_iter.next().unwrap().unwrap().as_ref(),
             &[1, 2, 3, 4]
@@ -306,7 +330,12 @@ mod tests {
     fn chunked_read_iter_cursor_large_into_inner() {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter = ChunkedReaderIter::new(data_cursor, NonZeroUsize::new(4).unwrap(), NonZeroUsize::new(8).unwrap(), VectoredReadSelect::No);
+        let mut data_chunk_iter = ChunkedReaderIter::new(
+            data_cursor,
+            NonZeroUsize::new(4).unwrap(),
+            NonZeroUsize::new(8).unwrap(),
+            VectoredReadSelect::No,
+        );
         assert_eq!(
             data_chunk_iter.next().unwrap().unwrap().as_ref(),
             &[1, 2, 3, 4]
@@ -320,8 +349,13 @@ mod tests {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
 
-        let data_chunks: Vec<_> =
-            ChunkedReaderIter::new(data_cursor, NonZeroUsize::new(4).unwrap(), NonZeroUsize::new(8).unwrap(), VectoredReadSelect::No).collect();
+        let data_chunks: Vec<_> = ChunkedReaderIter::new(
+            data_cursor,
+            NonZeroUsize::new(4).unwrap(),
+            NonZeroUsize::new(8).unwrap(),
+            VectoredReadSelect::No,
+        )
+        .collect();
         let data_chunks_as_slice: Vec<&[u8]> = data_chunks
             .iter()
             .map(|r| r.as_ref().unwrap().as_ref())
@@ -333,7 +367,12 @@ mod tests {
     fn chunked_read_iter_cursor_large_buf_eq_chunk() {
         let data_buf = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter = ChunkedReaderIter::new(data_cursor, NonZeroUsize::new(4).unwrap(), NonZeroUsize::new(4).unwrap(), VectoredReadSelect::No);
+        let mut data_chunk_iter = ChunkedReaderIter::new(
+            data_cursor,
+            NonZeroUsize::new(4).unwrap(),
+            NonZeroUsize::new(4).unwrap(),
+            VectoredReadSelect::No,
+        );
         assert_eq!(
             data_chunk_iter.next().unwrap().unwrap().as_ref(),
             &[1, 2, 3, 4]
@@ -349,7 +388,12 @@ mod tests {
     fn chunked_read_iter_cursor_smol() {
         let data_buf = [1, 2, 3];
         let data_cursor = Cursor::new(data_buf);
-        let mut data_chunk_iter = ChunkedReaderIter::new(data_cursor, NonZeroUsize::new(4).unwrap(), NonZeroUsize::new(4).unwrap(), VectoredReadSelect::No);
+        let mut data_chunk_iter = ChunkedReaderIter::new(
+            data_cursor,
+            NonZeroUsize::new(4).unwrap(),
+            NonZeroUsize::new(4).unwrap(),
+            VectoredReadSelect::No,
+        );
         assert_eq!(
             data_chunk_iter.next().unwrap().unwrap().as_ref(),
             &[1, 2, 3]
