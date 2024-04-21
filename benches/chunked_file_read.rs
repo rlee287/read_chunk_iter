@@ -288,12 +288,52 @@ fn criterion_benchmark_chunksize(c: &mut Criterion) {
     group.finish();
 }
 
+fn criterion_benchmark_chunksize_hash(c: &mut Criterion) {
+    let mut group = c.benchmark_group("(hash, filesize:2MiB, chunk:?, multiplier:4)");
+
+    for chunk_size in
+        [1024 * 4, 1024 * 8, 1024 * 16, 1024 * 32, 1024 * 64].map(|x| NonZeroUsize::new(x).unwrap())
+    {
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(&[0xf0; 1024 * 1024 * 2]).unwrap();
+        temp_file.flush().unwrap();
+        temp_file.rewind().unwrap();
+
+        let temp_file_path = temp_file.path();
+
+        group.bench_with_input(
+            BenchmarkId::new("simple", chunk_size),
+            &chunk_size,
+            |b, &size| {
+                b.iter_batched(
+                    || File::open(temp_file_path).unwrap(),
+                    |file| do_chunked_read_hash(file, size, black_box(4)),
+                    criterion::BatchSize::PerIteration,
+                );
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("threaded", chunk_size),
+            &chunk_size,
+            |b, &size| {
+                b.iter_batched(
+                    || File::open(temp_file_path).unwrap(),
+                    |file| do_threaded_chunked_read_hash(file, size, black_box(4)),
+                    criterion::BatchSize::PerIteration,
+                );
+            },
+        );
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
     criterion_benchmark_bufread_vs_iter,
     criterion_benchmark_multiplier,
     criterion_benchmark_multiplier_hash,
     criterion_benchmark_filesize,
-    criterion_benchmark_chunksize
+    criterion_benchmark_chunksize,
+    criterion_benchmark_chunksize_hash
 );
 criterion_main!(benches);
