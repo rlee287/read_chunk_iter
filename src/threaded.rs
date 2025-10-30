@@ -6,7 +6,7 @@ use std::num::NonZeroUsize;
 use crate::vectored_read::{read_vectored_into_buf, resolve_read_vectored, VectoredReadSelect};
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::mpsc::{sync_channel, Receiver, TrySendError};
+use std::sync::mpsc::{Receiver, TryRecvError, TrySendError, sync_channel};
 use std::sync::Arc;
 use std::thread::spawn as thread_spawn;
 use std::thread::JoinHandle;
@@ -298,18 +298,28 @@ impl<R: Send> Iterator for ThreadedChunkedReaderIter<R> {
     /// EOF may be hit more than once, resulting in more chunks after a chunk smaller than `self.chunk_size` or more chunks after yielding `None`.
     /// (This is also a concern with the base [`Read`] trait, which may return more data even after returning `Ok(0)`).
     fn next(&mut self) -> Option<Self::Item> {
-        // Swap in a true value for whatever was there before
-        // If a false value was there previously, then the thread is waiting
-        // So we need to wake the thread
-        if self.unpause_flag.swap(1, Ordering::AcqRel) == 0 {
-            wake_all(self.unpause_flag.deref());
-        }
         if let Some(ref rx) = self.channel_receiver {
-            match rx.recv() {
+            // try_recv first (nonblocking) before blocking to wait for read
+            // This way we only need to wake the thread if no data is available
+            match rx.try_recv() {
                 Ok(Ok(data)) if data.len() == 0 => None,
                 Ok(Ok(data)) => Some(Ok(data)),
                 Ok(Err(e)) => Some(Err(e)),
-                Err(_) => None,
+                Err(TryRecvError::Empty) => {
+                    // Swap in a true value for whatever was there before
+                    // If a false value was there previously, then the thread 
+                    // is waiting, so we need to wake the thread
+                    if self.unpause_flag.swap(1, Ordering::AcqRel) == 0 {
+                        wake_all(self.unpause_flag.deref());
+                    }
+                    match rx.recv() {
+                        Ok(Ok(data)) if data.len() == 0 => None,
+                        Ok(Ok(data)) => Some(Ok(data)),
+                        Ok(Err(e)) => Some(Err(e)),
+                        Err(_) => None,
+                    }
+                }
+                Err(TryRecvError::Disconnected) => None,
             }
         } else {
             // self.channel_receiver should always be live unless in destructor
