@@ -48,10 +48,7 @@ impl<R> ChunkedReaderIter<R> {
     #[inline]
     pub fn into_inner(self) -> (Box<[u8]>, Option<IOError>, R) {
         (
-            self.buf[self.undrained_byte_count..]
-                .iter()
-                .copied()
-                .collect(),
+            Box::from(&self.buf[self.undrained_byte_count..]),
             self.io_error_stash,
             self.reader,
         )
@@ -167,11 +164,8 @@ impl<R: Read> Iterator for ChunkedReaderIter<R> {
             self.undrained_byte_count = 0;
             Some(Ok(boxed_data))
         } else {
-            let ret_buf = self.buf[self.undrained_byte_count
-                ..self.undrained_byte_count + usize::from(self.chunk_size)]
-                .iter()
-                .copied()
-                .collect();
+            let ret_buf = Box::from(&self.buf[self.undrained_byte_count
+                ..self.undrained_byte_count + usize::from(self.chunk_size)]);
             self.undrained_byte_count += usize::from(self.chunk_size);
             assert!(read_offset >= self.undrained_byte_count);
             if read_offset - self.undrained_byte_count < self.chunk_size.into() {

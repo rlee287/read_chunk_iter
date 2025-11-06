@@ -63,7 +63,8 @@ impl<R: Send> ThreadedChunkedReaderIter<R> {
                         Ok(boxed) => vec_byte_flatten.extend(boxed.as_ref()),
                         Err(e) => {
                             if !vec_byte_flatten.is_empty() {
-                                vec_return.push(Ok(vec_byte_flatten.drain(..).collect()));
+                                vec_return.push(Ok(Box::from(vec_byte_flatten.as_slice())));
+                                vec_byte_flatten.clear();
                             }
                             vec_return.push(Err(e));
                         }
@@ -167,7 +168,8 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
                                 // Yield currently read data before yielding Err
                                 // We are in loop so read_offset < chunk_size
                                 if read_offset > 0 {
-                                    let boxed_data: Box<[u8]> = buf.drain(..).collect();
+                                    let boxed_data = Box::from(buf.as_slice());
+                                    buf.clear();
                                     if tx.send(Ok(boxed_data)).is_err() {
                                         break 'read_loop;
                                     }
@@ -209,7 +211,8 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
 
                     if usize::from(chunk_size) > read_offset {
                         // Yield the remaining data at EOF
-                        let boxed_data: Box<[u8]> = buf.drain(..).collect();
+                        let boxed_data = Box::from(buf.as_slice());
+                        buf.clear();
                         // Since we ran out of data, do a pause until more is requested
                         unpause_flag.store(0, Ordering::Release);
                         match tx.send(Ok(boxed_data)) {
@@ -225,11 +228,9 @@ impl<R: Read + Send + 'static> ThreadedChunkedReaderIter<R> {
 
                         // Yield full chunks while we have them
                         while buf[bytes_yielded..].len() >= chunk_size.into() {
-                            match tx.try_send(Ok(buf
-                                [bytes_yielded..bytes_yielded + usize::from(chunk_size)]
-                                .iter()
-                                .copied()
-                                .collect()))
+                            let boxed_slice = Box::from(&buf
+                                [bytes_yielded..bytes_yielded + usize::from(chunk_size)]);
+                            match tx.try_send(Ok(boxed_slice))
                             {
                                 Ok(()) => {
                                     // OK to remove chunk from the vec
