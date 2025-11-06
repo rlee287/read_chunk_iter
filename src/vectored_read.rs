@@ -43,7 +43,7 @@ pub(crate) fn resolve_read_vectored<R: Read>(reader: &R, select: VectoredReadSel
 }
 
 /// Divide the given `slice` into a vec of [`IoSliceMut`]s of `size` each.
-fn chunk_slice_for_vectored_read(slice: &mut [u8], size: NonZeroUsize) -> Vec<IoSliceMut> {
+fn chunk_slice_for_vectored_read(slice: &mut [u8], size: NonZeroUsize) -> Vec<IoSliceMut<'_>> {
     let size = size.into();
 
     let mut vec_slices = Vec::with_capacity(slice.len().div_ceil(size));
